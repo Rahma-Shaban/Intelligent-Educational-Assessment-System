@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+.venv/
+env/
+.env/
+ENV/
+
+# Environment Variables & Secrets
+.env
+.env.local
+*.env
+
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Large Data Files (keep directories tracked with .gitkeep)
+data/raw/*.pdf
+data/raw/*.docx
+data/raw/*.zip
+data/raw/*.tar.gz
+data/raw/*.csv
+data/raw/*.json
+data/processed/*
+!data/processed/.gitkeep
+!data/raw/.gitkeep
+
+# Outputs (keep directory tracked with .gitkeep)
+outputs/*
+!outputs/.gitkeep

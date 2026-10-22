@@ -1,0 +1,5 @@
+# Minimal baseline requirements for project skeleton
+jupyter
+pandas
+numpy
+python-dotenv
