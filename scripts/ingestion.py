@@ -416,17 +416,17 @@ def build_vectorstore(
     collection_name: str = "curriculum",
 ) -> Chroma:
     """
-    Builds and persists a Chroma vector store.
-    Ensures idempotent creation by clearing any existing collection before adding chunks.
+    Creates a new Chroma collection and persists the supplied chunks.
+    Existing collections are preserved and cause an explicit error.
     """
     path = Path(persist_dir)
     path.mkdir(parents=True, exist_ok=True)
 
     client = chromadb.PersistentClient(path=str(path))
-    try:
-        client.delete_collection(name=collection_name)
-    except Exception:
-        pass
+    if collection_name in {collection.name for collection in client.list_collections()}:
+        raise FileExistsError(
+            f"Collection '{collection_name}' already exists in {path}; refusing to overwrite it"
+        )
 
     store = Chroma(
         client=client,
@@ -444,7 +444,14 @@ def load_vectorstore(
     collection_name: str = "curriculum",
 ) -> Chroma:
     """Loads an existing Chroma vector store from disk."""
-    client = chromadb.PersistentClient(path=str(persist_dir))
+    path = Path(persist_dir)
+    if not path.is_dir():
+        raise FileNotFoundError(f"Vector store directory not found: {path}")
+    client = chromadb.PersistentClient(path=str(path))
+    if collection_name not in {collection.name for collection in client.list_collections()}:
+        raise FileNotFoundError(
+            f"Collection '{collection_name}' not found in vector store {path}"
+        )
     return Chroma(
         client=client,
         collection_name=collection_name,
