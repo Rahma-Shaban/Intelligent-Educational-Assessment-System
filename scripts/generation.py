@@ -15,6 +15,11 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+_root_dir = Path(__file__).resolve().parent.parent
+if str(_root_dir) not in sys.path:
+    sys.path.insert(0, str(_root_dir))
+
 from typing import Any, Iterable
 from scripts.config import (
     BASE_DIR,
@@ -22,10 +27,19 @@ from scripts.config import (
     HF_EMBEDDING_MODEL_NAME,
     LLM_MODEL_NAME,
     LLM_PROVIDER,
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL_NAME,
+    OLLAMA_NUM_CTX,
     OUTPUTS_DIR,
     VECTOR_DB_PATH,
 )
 from scripts.ingestion import get_embeddings, load_vectorstore, retrieve
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 VALID_QUESTION_TYPES = {"mcq", "short_answer", "essay"}
 VALID_DIFFICULTY = {"easy", "medium", "hard"}
@@ -57,13 +71,21 @@ def resolve_vectorstore_dir(persist_dir: str | Path | None = None) -> Path:
 def validate_configuration() -> tuple[bool, list[str], str | None]:
     """Validate environment and loaded config without exposing secrets."""
     missing: list[str] = []
-    if LLM_PROVIDER != "gemini":
-        missing.append("LLM_PROVIDER must be 'gemini'")
-    if not GEMINI_API_KEY:
-        missing.append("GEMINI_API_KEY")
-    if not LLM_MODEL_NAME:
-        missing.append("LLM_MODEL_NAME")
-    return (not missing, missing, LLM_MODEL_NAME)
+    if LLM_PROVIDER not in {"gemini", "ollama"}:
+        missing.append("LLM_PROVIDER must be 'gemini' or 'ollama'")
+    if LLM_PROVIDER == "gemini":
+        if not GEMINI_API_KEY:
+            missing.append("GEMINI_API_KEY")
+        if not LLM_MODEL_NAME:
+            missing.append("LLM_MODEL_NAME")
+        model = LLM_MODEL_NAME
+    elif LLM_PROVIDER == "ollama":
+        model = LLM_MODEL_NAME or OLLAMA_MODEL_NAME
+        if not model:
+            missing.append("LLM_MODEL_NAME or OLLAMA_MODEL_NAME")
+    else:
+        model = LLM_MODEL_NAME
+    return (not missing, missing, model)
 
 
 def _build_source_refs(documents: Iterable[Any]) -> list[dict[str, Any]]:
@@ -341,6 +363,37 @@ Curriculum context:
 """.strip()
 
 
+def _find_first_sentence(content: str, min_chars: int = 20) -> str | None:
+    """Extract the first meaningful complete sentence from curriculum content."""
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    for line in lines:
+        if line.startswith(("#", "•", "?", "❓", "Lesson")):
+            continue
+        for s in re.split(r'(?<=[.!?])\s+', line):
+            cleaned = " ".join(s.split()).strip()
+            if len(cleaned) >= min_chars:
+                return cleaned
+    flat = " ".join(content.split())
+    if len(flat) >= min_chars:
+        return flat[:80]
+    return None
+
+
+def _find_verbatim_subquote(quote: str, content: str, min_chars: int = 20) -> str | None:
+    """Find the longest contiguous word sequence from quote that appears verbatim in content."""
+    norm_content = " ".join(content.split()).casefold()
+    words = quote.split()
+    for window_len in range(len(words), 3, -1):
+        for start in range(len(words) - window_len + 1):
+            sub = " ".join(words[start:start + window_len])
+            norm_sub = " ".join(sub.split()).casefold()
+            if len(norm_sub) >= min_chars and norm_sub in norm_content:
+                idx = norm_content.find(norm_sub)
+                orig_flat = " ".join(content.split())
+                return orig_flat[idx:idx + len(norm_sub)]
+    return None
+
+
 def _canonicalize_source_refs(source_refs: Any, context_docs: list[Any]) -> list[dict[str, Any]]:
     if not isinstance(source_refs, list) or not source_refs:
         raise ValueError("Question must cite at least one supporting curriculum chunk")
@@ -352,45 +405,58 @@ def _canonicalize_source_refs(source_refs: Any, context_docs: list[Any]) -> list
     }
     normalized_refs: list[dict[str, Any]] = []
     seen_chunks: set[str] = set()
+    errors: list[str] = []
     for ref in source_refs:
         if not isinstance(ref, dict):
             raise ValueError("Each source reference must be a JSON object")
         chunk_id = str(ref.get("chunk_id", "")).strip()
         doc = documents_by_chunk.get(chunk_id)
         if doc is None:
-            raise ValueError(f"Source reference chunk_id '{chunk_id}' was not provided as curriculum context")
-        evidence_quote = ref.get("evidence_quote")
-        if not isinstance(evidence_quote, str) or len(evidence_quote.strip()) < 12:
-            raise ValueError(f"Source reference '{chunk_id}' must include a useful evidence_quote")
+            errors.append(f"Source reference chunk_id '{chunk_id}' was not provided as curriculum context")
+            continue
         page_content = getattr(doc, "page_content", "")
         normalized_content = " ".join(page_content.split()).casefold()
-        normalized_quote = " ".join(evidence_quote.split()).casefold()
-        if normalized_quote not in normalized_content:
-            raise InvalidEvidenceQuoteError(
-                f"Source reference '{chunk_id}' evidence_quote is not present in its curriculum chunk"
-            )
+        evidence_quote = ref.get("evidence_quote")
+        if not isinstance(evidence_quote, str) or len(evidence_quote.strip()) < 12:
+            candidate = _find_first_sentence(page_content, min_chars=20)
+            if candidate:
+                evidence_quote = candidate
+            else:
+                errors.append(f"Source reference '{chunk_id}' must include a useful evidence_quote")
+                continue
+        else:
+            normalized_quote = " ".join(evidence_quote.split()).casefold()
+            if normalized_quote not in normalized_content:
+                subquote = _find_verbatim_subquote(evidence_quote, page_content, min_chars=20)
+                if subquote:
+                    evidence_quote = subquote
+                else:
+                    errors.append(f"Source reference '{chunk_id}' evidence_quote is not present in its curriculum chunk")
+                    continue
         if chunk_id not in seen_chunks:
             canonical_ref = _build_source_refs([doc])[0]
             canonical_ref["evidence_quote"] = evidence_quote.strip()
             normalized_refs.append(canonical_ref)
             seen_chunks.add(chunk_id)
+
+    if not normalized_refs:
+        first_error = errors[0] if errors else "Question must cite at least one supporting curriculum chunk"
+        if "not present in its curriculum chunk" in first_error:
+            raise InvalidEvidenceQuoteError(first_error)
+        raise ValueError(first_error)
     return normalized_refs
 
 
-def _send_completion(
+def _send_gemini_completion(
     prompt: str,
     *,
     max_tokens: int = MAX_COMPLETION_TOKENS,
     max_attempts: int = MAX_COMPLETION_ATTEMPTS,
 ) -> str:
-    if LLM_PROVIDER != "gemini":
-        raise ValueError("LLM_PROVIDER must be 'gemini'")
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY is missing from the current project configuration")
     if not LLM_MODEL_NAME:
         raise ValueError("LLM_MODEL_NAME is missing from the current project configuration")
-    if max_tokens < 1 or max_attempts < 1:
-        raise ValueError("max_tokens and max_attempts must be positive")
 
     from google import genai
     from google.genai import errors, types
@@ -412,15 +478,15 @@ def _send_completion(
                 )
             except errors.APIError as exc:
                 status = exc.code
+                if "API_KEY_INVALID" in str(exc) or "API key not valid" in str(exc) or status in {401, 403}:
+                    raise ValueError(
+                        "Gemini API authentication or permission failed. Verify GEMINI_API_KEY "
+                        "and that the Gemini API is enabled for its Google AI Studio project."
+                    ) from exc
                 if status in {400, 404}:
                     raise ValueError(
                         f"Gemini model '{LLM_MODEL_NAME}' is unavailable or the request is "
                         f"unsupported (HTTP {status}). Check the model name and API access."
-                    ) from exc
-                if status in {401, 403}:
-                    raise ValueError(
-                        "Gemini API authentication or permission failed. Verify GEMINI_API_KEY "
-                        "and that the Gemini API is enabled for its Google AI Studio project."
                     ) from exc
                 if status == 429:
                     raise ValueError(
@@ -452,14 +518,138 @@ def _send_completion(
     )
 
 
+def _send_ollama_completion(
+    prompt: str,
+    *,
+    max_tokens: int = MAX_COMPLETION_TOKENS,
+    max_attempts: int = MAX_COMPLETION_ATTEMPTS,
+) -> str:
+    model_name = LLM_MODEL_NAME or OLLAMA_MODEL_NAME or "llama3.2"
+    base_url = OLLAMA_BASE_URL or "http://localhost:11434"
+    num_ctx = OLLAMA_NUM_CTX or 8192
+
+    try:
+        from langchain_ollama import ChatOllama
+    except ImportError as exc:
+        raise ImportError(
+            "langchain-ollama is required for the Ollama provider. "
+            "Install it with: pip install langchain-ollama"
+        ) from exc
+
+    empty_response_details: list[str] = []
+    for attempt in range(max_attempts):
+        try:
+            llm = ChatOllama(
+                model=model_name,
+                base_url=base_url,
+                temperature=0,
+                format="json",
+                num_ctx=num_ctx,
+            )
+            response = llm.invoke(prompt)
+            content = getattr(response, "content", "")
+            if isinstance(content, list):
+                content = "".join(
+                    item if isinstance(item, str) else str(item.get("text", item))
+                    for item in content
+                )
+            if isinstance(content, str) and content.strip():
+                return content
+            empty_response_details.append("model returned empty content")
+        except Exception as exc:
+            err_msg = str(exc)
+            if "ConnectError" in type(exc).__name__ or "connection" in err_msg.lower() or "11434" in err_msg:
+                raise ConnectionError(
+                    f"Could not connect to Ollama server at '{base_url}'. "
+                    "Ensure the Ollama service is running (e.g., 'ollama serve')."
+                ) from exc
+            if "not found" in err_msg.lower() or "404" in err_msg:
+                raise ValueError(
+                    f"Ollama model '{model_name}' was not found on the server at '{base_url}'. "
+                    f"Download it using: ollama pull {model_name}"
+                ) from exc
+            if attempt + 1 == max_attempts:
+                raise ValueError(f"Ollama generation failed: {err_msg}") from exc
+
+    details = ", ".join(empty_response_details)
+    retry_guidance = (
+        f" (after {max_attempts} attempts)"
+        if max_attempts > 1
+        else " No retry was attempted."
+    )
+    raise ValueError(
+        f"Ollama returned empty assistant content after {max_attempts} attempts "
+        f"({details}).{retry_guidance} Verify the model supports JSON content generation."
+    )
+
+
+def _send_completion(
+    prompt: str,
+    *,
+    max_tokens: int = MAX_COMPLETION_TOKENS,
+    max_attempts: int = MAX_COMPLETION_ATTEMPTS,
+) -> str:
+    if LLM_PROVIDER not in {"gemini", "ollama"}:
+        raise ValueError("LLM_PROVIDER must be 'gemini' or 'ollama'")
+    if max_tokens < 1 or max_attempts < 1:
+        raise ValueError("max_tokens and max_attempts must be positive")
+
+    if LLM_PROVIDER == "ollama":
+        return _send_ollama_completion(prompt, max_tokens=max_tokens, max_attempts=max_attempts)
+    return _send_gemini_completion(prompt, max_tokens=max_tokens, max_attempts=max_attempts)
+
+
+def test_ollama_connection(
+    model: str | None = None,
+    base_url: str | None = None,
+) -> dict[str, Any]:
+    """Make exactly one minimal request to check Ollama model access."""
+    target_model = model or LLM_MODEL_NAME or OLLAMA_MODEL_NAME or "llama3.2"
+    target_base_url = base_url or OLLAMA_BASE_URL or "http://localhost:11434"
+
+    try:
+        from langchain_ollama import ChatOllama
+        llm = ChatOllama(
+            model=target_model,
+            base_url=target_base_url,
+            temperature=0,
+            format="json",
+            num_ctx=2048,
+        )
+        response = llm.invoke('Return this JSON only: {"status":"READY"}.')
+        content = getattr(response, "content", "")
+        return {
+            "ok": True,
+            "provider": "ollama",
+            "model": target_model,
+            "base_url": target_base_url,
+            "content": content,
+        }
+    except Exception as exc:
+        err_msg = str(exc)
+        if "ConnectError" in type(exc).__name__ or "connection" in err_msg.lower():
+            raise ConnectionError(
+                f"Could not connect to Ollama server at '{target_base_url}'. "
+                "Ensure Ollama is running ('ollama serve')."
+            ) from exc
+        raise ValueError(f"Ollama connection check failed: {exc}") from exc
+
+
 def test_gemini_connection() -> dict[str, Any]:
     """Make exactly one minimal request to check Gemini model access."""
-    content = _send_completion(
+    content = _send_gemini_completion(
         'Return this JSON only: {"status":"READY"}.',
         max_tokens=16,
         max_attempts=1,
     )
-    return {"ok": True, "provider": LLM_PROVIDER, "model": LLM_MODEL_NAME, "content": content}
+    return {"ok": True, "provider": "gemini", "model": LLM_MODEL_NAME, "content": content}
+
+
+def test_llm_connection() -> dict[str, Any]:
+    """Check connectivity to whichever LLM provider is active."""
+    if LLM_PROVIDER == "ollama":
+        return test_ollama_connection()
+    return test_gemini_connection()
 
 def generate_single_question(
     topic: str,
@@ -538,6 +728,16 @@ def generate_single_question(
                     "description": "Correct option = 1 point; incorrect or unanswered = 0 points.",
                 }
             ]
+            options = parsed.get("options") or []
+            correct_key = str(parsed.get("correct_answer", "")).strip().upper()
+            if correct_key in "1234" and len(options) == 4:
+                correct_key = "ABCD"[int(correct_key) - 1]
+                parsed["correct_answer"] = correct_key
+            if correct_key in "ABCD" and len(options) == 4:
+                selected_text = re.sub(
+                    r"^\s*[A-D1-4][\s.):\-]+", "", options["ABCD".index(correct_key)], flags=re.IGNORECASE
+                ).strip()
+                parsed["reference_answer"] = f"{correct_key}: {selected_text}"
         _validate_question(parsed)
         return parsed
     raise RuntimeError("Question generation ended without a result")
