@@ -80,9 +80,9 @@ def validate_configuration() -> tuple[bool, list[str], str | None]:
             missing.append("LLM_MODEL_NAME")
         model = LLM_MODEL_NAME
     elif LLM_PROVIDER == "ollama":
-        model = LLM_MODEL_NAME or OLLAMA_MODEL_NAME
+        model = OLLAMA_MODEL_NAME or (LLM_MODEL_NAME if LLM_MODEL_NAME and not LLM_MODEL_NAME.startswith("gemini") else None) or "llama3.2"
         if not model:
-            missing.append("LLM_MODEL_NAME or OLLAMA_MODEL_NAME")
+            missing.append("OLLAMA_MODEL_NAME or LLM_MODEL_NAME")
     else:
         model = LLM_MODEL_NAME
     return (not missing, missing, model)
@@ -524,7 +524,7 @@ def _send_ollama_completion(
     max_tokens: int = MAX_COMPLETION_TOKENS,
     max_attempts: int = MAX_COMPLETION_ATTEMPTS,
 ) -> str:
-    model_name = LLM_MODEL_NAME or OLLAMA_MODEL_NAME or "llama3.2"
+    model_name = OLLAMA_MODEL_NAME or (LLM_MODEL_NAME if LLM_MODEL_NAME and not LLM_MODEL_NAME.startswith("gemini") else None) or "llama3.2"
     base_url = OLLAMA_BASE_URL or "http://localhost:11434"
     num_ctx = OLLAMA_NUM_CTX or 8192
 
@@ -604,7 +604,7 @@ def test_ollama_connection(
     base_url: str | None = None,
 ) -> dict[str, Any]:
     """Make exactly one minimal request to check Ollama model access."""
-    target_model = model or LLM_MODEL_NAME or OLLAMA_MODEL_NAME or "llama3.2"
+    target_model = model or OLLAMA_MODEL_NAME or (LLM_MODEL_NAME if LLM_MODEL_NAME and not LLM_MODEL_NAME.startswith("gemini") else None) or "llama3.2"
     target_base_url = base_url or OLLAMA_BASE_URL or "http://localhost:11434"
 
     try:

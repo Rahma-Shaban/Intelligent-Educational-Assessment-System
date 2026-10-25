@@ -27,67 +27,9 @@ def _send_grading_completion(
     max_tokens: int = MAX_GRADING_TOKENS,
     max_attempts: int = MAX_COMPLETION_ATTEMPTS,
 ) -> str:
-    """Send a structured completion request to Gemini with JSON output mode."""
-    if LLM_PROVIDER != "gemini":
-        raise ValueError("LLM_PROVIDER must be 'gemini'")
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY is missing from the current project configuration")
-    if not LLM_MODEL_NAME:
-        raise ValueError("LLM_MODEL_NAME is missing from the current project configuration")
-    if max_tokens < 1 or max_attempts < 1:
-        raise ValueError("max_tokens and max_attempts must be positive")
-
-    from google import genai
-    from google.genai import errors, types
-
-    empty_response_details: list[str] = []
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    try:
-        for attempt in range(max_attempts):
-            output_budget = max_tokens if attempt == 0 else RETRY_GRADING_TOKENS
-            try:
-                response = client.models.generate_content(
-                    model=LLM_MODEL_NAME,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        temperature=0,
-                        max_output_tokens=output_budget,
-                        response_mime_type="application/json",
-                    ),
-                )
-            except errors.APIError as exc:
-                status = exc.code
-                if status in {400, 404}:
-                    raise ValueError(
-                        f"Gemini model '{LLM_MODEL_NAME}' is unavailable or the request is "
-                        f"unsupported (HTTP {status}). Check the model name and API access."
-                    ) from exc
-                if status in {401, 403}:
-                    raise ValueError(
-                        "Gemini API authentication or permission failed. Verify GEMINI_API_KEY "
-                        "and that the Gemini API is enabled for its Google AI Studio project."
-                    ) from exc
-                if status == 429:
-                    raise ValueError(
-                        "Gemini API quota or rate limit exceeded. Check the project's model quota "
-                        "and billing in Google AI Studio, then retry."
-                    ) from exc
-                if status is not None and status >= 500:
-                    raise ValueError(f"Gemini API server error (HTTP {status}); retry later.") from exc
-                detail = str(exc).replace(GEMINI_API_KEY, "[REDACTED]")
-                raise ValueError(f"Gemini API request failed: {detail}") from exc
-
-            content = response.text
-            if isinstance(content, str) and content.strip():
-                return content
-            empty_response_details.append("model returned empty content")
-    finally:
-        client.close()
-
-    details = ", ".join(empty_response_details)
-    raise ValueError(
-        f"Gemini returned empty assistant content after {max_attempts} attempts ({details})."
-    )
+    """Send a structured completion request to active LLM (Gemini or Ollama) with JSON output mode."""
+    from scripts.generation import _send_completion
+    return _send_completion(prompt, max_tokens=max_tokens, max_attempts=max_attempts)
 
 
 def _extract_json_object(raw_output: str) -> dict[str, Any]:

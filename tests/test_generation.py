@@ -242,7 +242,10 @@ class GenerationValidationTests(unittest.TestCase):
             generation._validate_question(question)
 
     def test_configuration_error_does_not_include_secret(self):
-        with patch.object(generation, "GEMINI_API_KEY", None):
+        with (
+            patch.object(generation, "LLM_PROVIDER", "gemini"),
+            patch.object(generation, "GEMINI_API_KEY", None),
+        ):
             with self.assertRaisesRegex(ValueError, "GEMINI_API_KEY"):
                 generation._send_completion("test")
 

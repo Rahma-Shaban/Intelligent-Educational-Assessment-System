@@ -3,6 +3,8 @@ Configuration module for the Intelligent Educational Assessment System.
 Defines project-level paths using pathlib and loads environment variables from .env.
 """
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -28,10 +30,24 @@ ENV_FILE = (BASE_DIR / ".env").resolve()
 if ENV_FILE.exists():
     load_dotenv(dotenv_path=str(ENV_FILE), override=False)
 
-# Environment configurations (loaded safely without hardcoded secrets)
+# Environment configurations
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "gemini-2.5-flash-lite")
+
+# Ollama configuration (for local LLM provider)
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL_NAME = os.getenv("OLLAMA_MODEL_NAME", "llama3.2")
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
+
+# Resolve active LLM model name based on provider
+if LLM_PROVIDER == "ollama":
+    env_model = os.getenv("LLM_MODEL_NAME")
+    if env_model and not env_model.lower().startswith("gemini"):
+        LLM_MODEL_NAME = env_model
+    else:
+        LLM_MODEL_NAME = OLLAMA_MODEL_NAME
+else:
+    LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "gemini-2.5-flash-lite")
 
 # The retrieval pipeline uses local Hugging Face sentence-transformers embeddings,
 # not the OpenAI-compatible embedding IDs used for an external API client.
@@ -50,8 +66,3 @@ VECTOR_DB_PATH = (
     _vector_db_path if _vector_db_path.is_absolute() else BASE_DIR / _vector_db_path
 ).resolve()
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-
-# Ollama configuration (for local LLM provider)
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL_NAME = os.getenv("OLLAMA_MODEL_NAME", "llama3")
-OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
