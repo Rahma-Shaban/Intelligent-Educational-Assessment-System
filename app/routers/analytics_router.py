@@ -25,6 +25,9 @@ from scripts.feedback import generate_class_summary, generate_student_feedback
 
 router = APIRouter(tags=["Analytics"])
 
+# In-memory cache for generated class summaries to keep dashboard loading instant
+_SUMMARY_CACHE: dict[str, Any] = {}
+
 
 @router.post(
     "/cluster",
@@ -204,11 +207,21 @@ def _build_student_dashboard(
             pass
 
     cluster_label_str = cluster_data["cluster_label"] if cluster_data else "Under Evaluation"
-    feedback = generate_student_feedback(
-        student_name=student_user.name,
-        attempts=attempts_dicts,
-        cluster_label=cluster_label_str,
-    )
+    if not attempts_dicts:
+        feedback = {
+            "summary": f"Welcome, {student_user.name}. Complete your first assessment to view personalized AI diagnostics and feedback.",
+            "strengths": ["Account ready"],
+            "weaknesses": [],
+            "recommendations": ["Select an available published assessment to begin."],
+            "study_plan": "Review introductory course materials and take published quizzes.",
+            "cluster_label": cluster_label_str,
+        }
+    else:
+        feedback = generate_student_feedback(
+            student_name=student_user.name,
+            attempts=attempts_dicts,
+            cluster_label=cluster_label_str,
+        )
 
     return StudentDashboardResponse(
         student=UserResponse.model_validate(student_user),
@@ -309,7 +322,21 @@ def get_professor_dashboard(
         cluster_dicts.append(item)
         cluster_list.append(ClusterResponse(**item))
 
-    summary = generate_class_summary(class_analytics, {"clusters": cluster_dicts})
+    if not all_attempts:
+        summary = {
+            "overall_assessment": "No assessment submissions have been recorded yet. As students complete published assessments, automated class-wide analytics and instructional recommendations will appear here.",
+            "key_findings": ["No student submission data available yet."],
+            "topic_recommendations": {},
+            "intervention_needed": [],
+            "class_strengths": [],
+        }
+    else:
+        cache_key = f"{len(all_attempts)}_{sum(a.id for a in all_attempts)}_{len(cluster_records)}"
+        if cache_key in _SUMMARY_CACHE:
+            summary = _SUMMARY_CACHE[cache_key]
+        else:
+            summary = generate_class_summary(class_analytics, {"clusters": cluster_dicts})
+            _SUMMARY_CACHE[cache_key] = summary
 
     return ProfessorDashboardResponse(
         class_analytics=class_analytics,
