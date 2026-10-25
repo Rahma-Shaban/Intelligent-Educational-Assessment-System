@@ -18,6 +18,32 @@ test('exam payload uses the backend question-count field', () => {
 
   assert.equal(payload.number_of_questions, 20);
   assert.equal('num_questions' in payload, false);
+  assert.equal(payload.topic, 'Lesson One');
+});
+
+test('exam payload defaults empty topic to lesson title or lesson ID', () => {
+  const withLessonTitle = buildExamPayload({
+    title: '',
+    selectedLesson: '1-1',
+    topic: '',
+    difficulty: 'easy',
+    bloomLevel: 'understand',
+    questionTypes: ['mcq'],
+    numQuestions: '5',
+    lessonTitle: 'Introduction to Systems',
+  });
+  assert.equal(withLessonTitle.topic, 'Introduction to Systems');
+
+  const withOnlyLessonId = buildExamPayload({
+    title: '',
+    selectedLesson: '1-1',
+    topic: '   ',
+    difficulty: 'easy',
+    bloomLevel: 'understand',
+    questionTypes: ['mcq'],
+    numQuestions: '5',
+  });
+  assert.equal(withOnlyLessonId.topic, 'Lesson 1-1');
 });
 
 test('complete responses pass and silent partial responses fail', () => {

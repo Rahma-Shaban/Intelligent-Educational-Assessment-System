@@ -52,14 +52,19 @@ def create_exam(
     Generates curriculum-grounded assessment questions via the configured LLM and
     persists the resulting exam specification in the database.
     """
+    topic = payload.topic.strip() if payload.topic else ""
+    if not topic:
+        topic = f"Lesson {payload.lesson_id}"
+
     try:
         exam_dict, _ = generate_exam(
-            topic=payload.topic,
+            topic=topic,
             lesson_id=payload.lesson_id,
             difficulty=payload.difficulty,
             bloom_level=payload.bloom_level,
             question_types=payload.question_types,
             number_of_questions=payload.number_of_questions,
+            allow_partial=True,
         )
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(
@@ -84,7 +89,7 @@ def create_exam(
         title=title,
         curriculum_id=curr_id,
         lesson_id=payload.lesson_id,
-        topic=payload.topic,
+        topic=topic,
         difficulty=payload.difficulty,
         bloom_level=payload.bloom_level,
         exam_json=json.dumps(exam_dict),

@@ -90,7 +90,7 @@ class ExamGenerateRequest(BaseModel):
     """Parameters for AI exam generation."""
 
     lesson_id: str = Field(..., min_length=1, description="Curriculum lesson ID, e.g. '1-1'")
-    topic: str = Field(..., min_length=1, description="Assessment topic title")
+    topic: str = Field(default="", description="Assessment topic title")
     difficulty: str = Field(default="medium", pattern="^(easy|medium|hard)$")
     bloom_level: str = Field(
         default="apply",

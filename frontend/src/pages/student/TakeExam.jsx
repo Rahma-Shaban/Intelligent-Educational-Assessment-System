@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getExam, submitAttempt } from '../../api/client';
+import { getExam, startAttempt, submitAttempt } from '../../api/client';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -27,6 +27,9 @@ const TakeExam = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Attempt tracking
+  const [attemptId, setAttemptId] = useState(null);
+
   // Active question index
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -45,7 +48,7 @@ const TakeExam = () => {
   const [submitError, setSubmitError] = useState('');
 
   useEffect(() => {
-    const fetchExam = async () => {
+    const fetchExamAndStartAttempt = async () => {
       setLoading(true);
       setError('');
       try {
@@ -56,6 +59,17 @@ const TakeExam = () => {
         const allocatedSeconds = Math.max(600, qCount * 300);
         setRemainingSeconds(allocatedSeconds);
         setInitialSeconds(allocatedSeconds);
+
+        // Start an attempt to get an attempt_id
+        try {
+          const attemptData = await startAttempt(parseInt(id, 10));
+          setAttemptId(attemptData.attempt_id);
+          startTimeRef.current = Date.now();
+        } catch (attemptErr) {
+          console.warn('Could not start attempt (may need student role):', attemptErr);
+          // Still let them view the exam even if attempt creation fails
+          // They can try submitting later
+        }
       } catch (err) {
         console.error('Failed to load exam:', err);
         setError('Failed to load this assessment. It may not exist or the backend is offline.');
@@ -65,7 +79,7 @@ const TakeExam = () => {
     };
 
     if (id) {
-      fetchExam();
+      fetchExamAndStartAttempt();
     }
   }, [id]);
 
@@ -113,29 +127,48 @@ const TakeExam = () => {
     setSubmitError('');
 
     const elapsedSeconds = Math.round((Date.now() - startTimeRef.current) / 1000);
-
     const questionsList = exam?.questions || [];
-    const formattedAnswers = questionsList.map((q, idx) => ({
-      question_id: q.id || q.question_id || idx,
-      question_index: idx,
-      question: q.question,
-      question_type: q.question_type,
-      answer: answers[idx] !== undefined ? String(answers[idx]) : '',
-    }));
+
+    // Build answers as dict[str, str] mapping question_id -> answer string
+    // This matches the backend AttemptSubmitRequest schema
+    const answersDict = {};
+    questionsList.forEach((q, idx) => {
+      const questionId = q.question_id || q.id || `Q${String(idx + 1).padStart(2, '0')}`;
+      answersDict[questionId] = answers[idx] !== undefined ? String(answers[idx]) : '';
+    });
+
+    // If we have an attempt_id from startAttempt, use it
+    // Otherwise, start one now
+    let currentAttemptId = attemptId;
+    if (!currentAttemptId) {
+      try {
+        const attemptData = await startAttempt(parseInt(id, 10));
+        currentAttemptId = attemptData.attempt_id;
+        setAttemptId(currentAttemptId);
+      } catch (err) {
+        console.error('Failed to start attempt:', err);
+        const detail =
+          err.response?.data?.detail ||
+          err.response?.data?.message ||
+          'Could not start an exam attempt. Make sure you are logged in as a student.';
+        setSubmitError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+        setSubmitting(false);
+        return;
+      }
+    }
 
     const payload = {
-      exam_id: id,
-      answers: formattedAnswers,
+      attempt_id: currentAttemptId,
+      answers: answersDict,
       duration_seconds: elapsedSeconds,
-      time_spent: elapsedSeconds,
     };
 
     try {
       const response = await submitAttempt(payload);
       setShowConfirmModal(false);
-      const attemptId = response.attempt_id || response.id || response._id;
-      if (attemptId) {
-        navigate(`/student/attempt/${attemptId}`);
+      const resultId = response.id || response.attempt_id || response._id;
+      if (resultId) {
+        navigate(`/student/attempt/${resultId}`);
       } else {
         navigate('/student/results');
       }
@@ -205,7 +238,7 @@ const TakeExam = () => {
             icon={Send}
             onClick={() => setShowConfirmModal(true)}
           >
-            Finish & Submit
+            Finish &amp; Submit
           </Button>
         </div>
       </div>
@@ -377,7 +410,7 @@ const TakeExam = () => {
                 icon={Send}
                 onClick={() => setShowConfirmModal(true)}
               >
-                Review & Submit
+                Review &amp; Submit
               </Button>
             )}
           </div>

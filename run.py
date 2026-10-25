@@ -23,12 +23,26 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
 
+def _get_python_executable() -> str:
+    """Resolve the python executable, prioritizing the project virtualenv if present."""
+    for venv_name in ["venv", ".venv"]:
+        if sys.platform == "win32":
+            candidate = PROJECT_ROOT / venv_name / "Scripts" / "python.exe"
+        else:
+            candidate = PROJECT_ROOT / venv_name / "bin" / "python"
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
+
+
 def _run_backend() -> subprocess.Popen:
     """Launch the FastAPI server with uvicorn."""
+    python_exec = _get_python_executable()
+    print(f"[Backend]  Using Python runtime: {python_exec}")
     print("[Backend]  Starting FastAPI on http://localhost:8000 ...")
     return subprocess.Popen(
         [
-            sys.executable, "-m", "uvicorn",
+            python_exec, "-m", "uvicorn",
             "app.main:app",
             "--host", "0.0.0.0",
             "--port", "8000",

@@ -126,6 +126,10 @@ const GenerateExam = () => {
       bloomLevel,
       questionTypes: activeTypes,
       numQuestions,
+      lessonTitle:
+        selectedLessonDetails?.title ||
+        selectedLessonDetails?.lesson_title ||
+        selectedLessonDetails?.name,
     });
 
     try {
@@ -221,13 +225,13 @@ const GenerateExam = () => {
             {/* Target Topic Input */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
-                Target Topic / Focus Keyword
+                Target Topic / Focus Keyword (Optional)
               </label>
               <input
                 type="text"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                placeholder="e.g., Cognitive taxonomies, formative evaluation"
+                placeholder="e.g., Cognitive taxonomies (defaults to lesson topic if blank)"
                 className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-colors"
               />
             </div>
@@ -351,7 +355,7 @@ const GenerateExam = () => {
       {/* Generation in progress banner */}
       {generating && (
         <Card className="text-center py-10 bg-indigo-50/30 border-indigo-200">
-          <LoadingSpinner size="lg" message="Gemini LLM is synthesizing questions from curriculum context..." />
+          <LoadingSpinner size="lg" message="AI is synthesizing questions from curriculum context..." />
           <p className="text-xs text-indigo-600 mt-2">
             Verifying source quotes &bull; Formulating grading rubrics &bull; Formatting options
           </p>
