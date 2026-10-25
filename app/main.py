@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from sqlalchemy import inspect, text
 from app.database import Base, engine
 from app.routers import (
     analytics_router,
@@ -44,8 +45,18 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Initialize SQLite database tables on application startup."""
+    """Initialize SQLite database tables and ensure schema migrations."""
     Base.metadata.create_all(bind=engine)
+    try:
+        with engine.connect() as conn:
+            inspector = inspect(engine)
+            if "exams" in inspector.get_table_names():
+                cols = [c["name"] for c in inspector.get_columns("exams")]
+                if "is_published" not in cols:
+                    conn.execute(text("ALTER TABLE exams ADD COLUMN is_published BOOLEAN DEFAULT 0"))
+                    conn.commit()
+    except Exception:
+        pass
 
 
 # Mount feature routers with designated API prefixes

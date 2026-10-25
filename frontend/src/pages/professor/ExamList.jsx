@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getExams } from '../../api/client';
+import { getExams, togglePublishExam } from '../../api/client';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -24,6 +24,22 @@ const ExamList = () => {
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDifficulty, setFilterDifficulty] = useState('all');
+  const [togglingId, setTogglingId] = useState(null);
+
+  const handleTogglePublish = async (examId, currentStatus) => {
+    setTogglingId(examId);
+    try {
+      const updated = await togglePublishExam(examId, !currentStatus);
+      setExams((prev) =>
+        prev.map((ex) => (ex.id === examId ? { ...ex, is_published: updated.is_published } : ex))
+      );
+    } catch (err) {
+      console.error('Failed to toggle publish status:', err);
+      setError('Could not update publication status. Please try again.');
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   useEffect(() => {
     const fetchExams = async () => {
@@ -166,7 +182,16 @@ const ExamList = () => {
                       <Calendar className="w-3.5 h-3.5" />
                       {dateStr}
                     </span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          exam.is_published
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : 'bg-amber-100 text-amber-800 border border-amber-300'
+                        }`}
+                      >
+                        {exam.is_published ? '● Published' : '○ Draft'}
+                      </span>
                       {exam.difficulty && (
                         <Badge type="difficulty" size="sm">
                           {exam.difficulty}
@@ -203,8 +228,15 @@ const ExamList = () => {
                   </div>
                 </div>
 
-                <div className="pt-4 mt-3 border-t border-gray-100 flex items-center justify-between">
-                  <span className="text-xs font-mono text-gray-400">ID: {String(examId).slice(0, 8)}...</span>
+                <div className="pt-4 mt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+                  <Button
+                    variant={exam.is_published ? 'ghost' : 'primary'}
+                    size="sm"
+                    loading={togglingId === examId}
+                    onClick={() => handleTogglePublish(examId, exam.is_published)}
+                  >
+                    {exam.is_published ? 'Unpublish' : 'Publish to Students'}
+                  </Button>
                   <Link to={`/professor/exams/${examId}`}>
                     <Button variant="outline" size="sm" icon={Eye}>
                       Inspect

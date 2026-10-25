@@ -91,6 +91,11 @@ export const getExam = async (id) => {
   return response.data;
 };
 
+export const togglePublishExam = async (id, isPublished = true) => {
+  const response = await apiClient.patch(`/exams/${id}/publish`, { is_published: isPublished });
+  return response.data;
+};
+
 // Attempts endpoints
 export const startAttempt = async (examId) => {
   const response = await apiClient.post('/attempts/start', { exam_id: examId });

@@ -64,13 +64,32 @@ def compute_clustering(
     features, student_ids, feature_names = build_feature_matrix(attempts_data)
     cluster_result = cluster_students(features, student_ids, feature_names=feature_names)
 
+    engine = None
+    student_scores_map: dict[str, list[float]] = {}
+    try:
+        from scripts.analytics import StudentAnalyticsEngine
+        engine = StudentAnalyticsEngine()
+        for att in attempts_data:
+            s_key = str(att["student_id"])
+            student_scores_map.setdefault(s_key, []).append(float(att["percentage"]))
+    except Exception:
+        engine = None
+
     output: list[ClusterResponse] = []
     now = datetime.now(timezone.utc)
 
     for item in cluster_result.get("clusters", []):
         raw_sid = item["student_id"]
         c_label = item.get("label", "Unknown")
-        features_dict = item.get("features", {})
+        features_dict = dict(item.get("features", {}))
+
+        # Use trained StudentAnalyticsEngine if available
+        if engine and raw_sid in student_scores_map:
+            pred = engine.predict_student(student_scores_map[raw_sid])
+            if pred.get("is_evaluated"):
+                c_label = pred["student_level"]
+            features_dict["level_code"] = pred.get("level_code", -1)
+            features_dict["student_level"] = c_label
 
         # student_ids from build_feature_matrix are strings; convert to int for DB
         try:
@@ -162,7 +181,29 @@ def _build_student_dashboard(
             }
         )
 
-    cluster_label_str = cluster_data["cluster_label"] if cluster_data else "Unknown"
+    if cluster_response is None and attempts_dicts:
+        try:
+            from scripts.analytics import StudentAnalyticsEngine
+            import numpy as np
+            engine = StudentAnalyticsEngine()
+            p_scores = [a["percentage"] for a in attempts_dicts]
+            pred = engine.predict_student(p_scores)
+            c_label = pred.get("student_level", "Under Evaluation")
+            dyn_feats = {
+                "avg_percentage": round(float(np.mean(p_scores)), 2),
+                "exams_taken": len(p_scores),
+                "level_code": pred.get("level_code", -1),
+            }
+            cluster_response = ClusterResponse(
+                student_id=student_id,
+                cluster_label=c_label,
+                features=dyn_feats,
+            )
+            cluster_data = {"cluster_label": c_label, "features": dyn_feats}
+        except Exception:
+            pass
+
+    cluster_label_str = cluster_data["cluster_label"] if cluster_data else "Under Evaluation"
     feedback = generate_student_feedback(
         student_name=student_user.name,
         attempts=attempts_dicts,

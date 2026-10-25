@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_role
 from app.database import get_db
-from app.models import Exam, ExamAttempt, User
+from app.models import Exam, ExamAttempt, StudentCluster, User
 from app.schemas import (
     AttemptResponse,
     AttemptStartRequest,
@@ -73,6 +73,12 @@ def start_attempt(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Exam with ID {payload.exam_id} not found.",
+        )
+
+    if not getattr(exam, "is_published", False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot start an attempt on an unpublished exam.",
         )
 
     attempt = ExamAttempt(
@@ -163,6 +169,58 @@ def submit_attempt(
 
     db.commit()
     db.refresh(attempt)
+
+    # Real-time student profiling using trained StudentAnalyticsEngine
+    try:
+        from scripts.analytics import StudentAnalyticsEngine
+        import numpy as np
+
+        all_student_attempts = db.scalars(
+            select(ExamAttempt).where(
+                ExamAttempt.student_id == current_user.id,
+                ExamAttempt.submitted_at.is_not(None),
+            )
+        ).all()
+
+        scores = [
+            float(att.total_score / att.max_possible_score * 100.0)
+            for att in all_student_attempts
+            if att.max_possible_score and att.max_possible_score > 0 and att.total_score is not None
+        ]
+
+        if scores:
+            engine = StudentAnalyticsEngine()
+            pred = engine.predict_student(scores)
+            c_label = pred.get("student_level", "Under Evaluation")
+
+            features_dict = {
+                "avg_percentage": round(float(np.mean(scores)), 2),
+                "max_percentage": round(float(np.max(scores)), 2),
+                "min_percentage": round(float(np.min(scores)), 2),
+                "exams_taken": len(scores),
+                "std_percentage": round(float(np.std(scores, ddof=1)), 2) if len(scores) > 1 else 0.0,
+                "level_code": pred.get("level_code", -1),
+            }
+
+            cluster_rec = db.scalar(
+                select(StudentCluster).where(StudentCluster.student_id == current_user.id)
+            )
+            now_cluster = datetime.now(timezone.utc)
+            if cluster_rec:
+                cluster_rec.cluster_label = c_label
+                cluster_rec.features_json = json.dumps(features_dict)
+                cluster_rec.updated_at = now_cluster
+            else:
+                new_cluster_rec = StudentCluster(
+                    student_id=current_user.id,
+                    cluster_label=c_label,
+                    features_json=json.dumps(features_dict),
+                    updated_at=now_cluster,
+                )
+                db.add(new_cluster_rec)
+            db.commit()
+    except Exception as exc:
+        logger.warning("Could not update student proficiency profile: %s", exc)
 
     return _format_attempt_response(attempt)
 

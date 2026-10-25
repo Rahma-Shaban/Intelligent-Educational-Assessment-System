@@ -65,17 +65,19 @@ const AttemptResult = () => {
     );
   }
 
-  const score = attempt.score ?? attempt.total_score ?? 0;
-  const maxScore = attempt.max_score ?? attempt.total_points ?? 100;
+  const score = attempt.total_score ?? attempt.score ?? 0;
+  const maxScore = attempt.max_possible_score ?? attempt.max_score ?? attempt.total_points ?? 100;
   const percentage =
-    attempt.percentage !== undefined
+    attempt.percentage !== undefined && attempt.percentage !== null
       ? Math.round(attempt.percentage)
       : maxScore > 0
       ? Math.round((score / maxScore) * 100)
       : 0;
 
   const passed = attempt.passed !== undefined ? attempt.passed : percentage >= 60;
-  const questions = attempt.questions || attempt.evaluations || attempt.answers || [];
+  const questions = Array.isArray(attempt.graded_answers)
+    ? attempt.graded_answers
+    : attempt.questions || attempt.evaluations || attempt.answers || [];
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -184,11 +186,15 @@ const AttemptResult = () => {
             const isCorrect =
               q.is_correct !== undefined
                 ? q.is_correct
+                : q.passed !== undefined
+                ? q.passed
+                : q.earned_score !== undefined && q.max_score !== undefined
+                ? q.earned_score === q.max_score
                 : q.score !== undefined && q.max_score !== undefined
                 ? q.score === q.max_score
                 : true;
 
-            const qScore = q.score ?? (isCorrect ? 1 : 0);
+            const qScore = q.earned_score ?? q.score ?? (isCorrect ? (q.max_score || 1) : 0);
             const qMax = q.max_score ?? 1;
 
             return (
@@ -275,7 +281,7 @@ const AttemptResult = () => {
                 {(q.question_type === 'essay' || q.question_type === 'short_answer') && (
                   <div className="space-y-4 pt-1">
                     {/* Rubric Breakdown */}
-                    {(q.rubric_breakdown || q.rubric_scores || q.rubric) && (
+                    {(q.rubric_breakdown || q.rubric_evaluation || q.rubric_scores || q.rubric) && (
                       <div className="space-y-2">
                         <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
                           Rubric Criterion Evaluation:
@@ -290,7 +296,7 @@ const AttemptResult = () => {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 bg-white">
-                              {(q.rubric_breakdown || q.rubric_scores || q.rubric).map(
+                              {(q.rubric_breakdown || q.rubric_evaluation || q.rubric_scores || q.rubric).map(
                                 (r, rIdx) => (
                                   <tr key={rIdx} className="hover:bg-slate-50">
                                     <td className="px-3.5 py-2.5 font-semibold text-gray-900">

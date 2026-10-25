@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getLessons, generateExam } from '../../api/client';
+import { getLessons, generateExam, togglePublishExam } from '../../api/client';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -45,6 +45,21 @@ const GenerateExam = () => {
   const [error, setError] = useState('');
   const [generatedExam, setGeneratedExam] = useState(null);
   const [lastRequestedCount, setLastRequestedCount] = useState(null);
+  const [isPublished, setIsPublished] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+
+  const handleQuickPublish = async () => {
+    if (!generatedExam?.id) return;
+    setPublishing(true);
+    try {
+      const res = await togglePublishExam(generatedExam.id, true);
+      setIsPublished(res.is_published);
+    } catch (err) {
+      console.error('Failed to publish exam:', err);
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   const navigate = useNavigate();
   const selectedLessonDetails = lessons.find(
@@ -380,7 +395,18 @@ const GenerateExam = () => {
                 </p>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {generatedExam.id && (
+                <Button
+                  variant={isPublished ? "outline" : "primary"}
+                  size="sm"
+                  loading={publishing}
+                  onClick={handleQuickPublish}
+                  className={!isPublished ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm" : ""}
+                >
+                  {isPublished ? "✓ Published to Students" : "Publish to Students Now"}
+                </Button>
+              )}
               <Link to="/professor/exams">
                 <Button variant="secondary" size="sm">
                   View All Exams
@@ -388,8 +414,8 @@ const GenerateExam = () => {
               </Link>
               {generatedExam.id && (
                 <Link to={`/professor/exams/${generatedExam.id}`}>
-                  <Button variant="primary" size="sm" icon={Eye}>
-                    Inspect Full Details
+                  <Button variant="outline" size="sm" icon={Eye}>
+                    Inspect Details
                   </Button>
                 </Link>
               )}

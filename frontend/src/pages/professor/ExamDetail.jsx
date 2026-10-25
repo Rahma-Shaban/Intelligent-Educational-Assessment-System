@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getExam } from '../../api/client';
+import { getExam, togglePublishExam } from '../../api/client';
+import { Send, Globe } from 'lucide-react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -24,6 +25,22 @@ const ExamDetail = () => {
   const [exam, setExam] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [publishing, setPublishing] = useState(false);
+
+  const handleTogglePublish = async () => {
+    if (!exam) return;
+    setPublishing(true);
+    try {
+      const nextStatus = !exam.is_published;
+      const updated = await togglePublishExam(id, nextStatus);
+      setExam((prev) => ({ ...prev, is_published: updated.is_published }));
+    } catch (err) {
+      console.error('Failed to toggle publish status:', err);
+      setError('Could not update publication status. Please try again.');
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   useEffect(() => {
     const fetchExam = async () => {
@@ -99,24 +116,47 @@ const ExamDetail = () => {
                 Grounding: Chroma RAG
               </span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white">
-              {exam.title || exam.topic || `Assessment #${id}`}
-            </h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white">
+                {exam.title || exam.topic || `Assessment #${id}`}
+              </h1>
+              <span
+                className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                  exam.is_published
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+                    : 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
+                }`}
+              >
+                {exam.is_published ? '● Published to Students' : '○ Draft (Hidden from Students)'}
+              </span>
+            </div>
             <p className="text-sm text-indigo-200">
               Lesson: {exam.lesson_title || exam.lesson || 'Standard Curriculum'}{' '}
               {exam.topic && `• Topic: ${exam.topic}`}
             </p>
           </div>
 
-          <div className="flex items-center gap-4 bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/10 shrink-0">
-            <div className="text-center px-3 border-r border-white/10">
-              <p className="text-[11px] uppercase tracking-wider text-indigo-200">Questions</p>
-              <p className="text-2xl font-bold">{questions.length}</p>
+          <div className="flex flex-col sm:flex-row items-center gap-4 shrink-0">
+            <div className="flex items-center gap-4 bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/10">
+              <div className="text-center px-3 border-r border-white/10">
+                <p className="text-[11px] uppercase tracking-wider text-indigo-200">Questions</p>
+                <p className="text-2xl font-bold">{questions.length}</p>
+              </div>
+              <div className="text-center px-3">
+                <p className="text-[11px] uppercase tracking-wider text-indigo-200">Total Points</p>
+                <p className="text-2xl font-bold text-amber-300">{totalScore}</p>
+              </div>
             </div>
-            <div className="text-center px-3">
-              <p className="text-[11px] uppercase tracking-wider text-indigo-200">Total Points</p>
-              <p className="text-2xl font-bold text-amber-300">{totalScore}</p>
-            </div>
+            <Button
+              variant={exam.is_published ? "secondary" : "primary"}
+              size="lg"
+              loading={publishing}
+              icon={exam.is_published ? Globe : Send}
+              onClick={handleTogglePublish}
+              className={exam.is_published ? "bg-white/20 text-white hover:bg-white/30 border-white/20" : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg"}
+            >
+              {exam.is_published ? "Unpublish Exam" : "Publish to Students"}
+            </Button>
           </div>
         </div>
       </Card>

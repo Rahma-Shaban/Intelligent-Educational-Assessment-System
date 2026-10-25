@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user, require_role
 from app.database import get_db
 from app.models import Curriculum, Exam, User
-from app.schemas import ExamGenerateRequest, ExamListItem, ExamResponse
+from app.schemas import ExamGenerateRequest, ExamListItem, ExamPublishRequest, ExamResponse
 from scripts.generation import generate_exam
 
 router = APIRouter(tags=["Exams"])
@@ -94,6 +94,7 @@ def create_exam(
         bloom_level=payload.bloom_level,
         exam_json=json.dumps(exam_dict),
         total_points=total_pts,
+        is_published=False,
         created_by=current_user.id,
         created_at=datetime.now(timezone.utc),
     )
@@ -110,9 +111,65 @@ def create_exam(
         bloom_level=exam_record.bloom_level,
         total_points=exam_record.total_points,
         question_count=len(questions),
+        is_published=exam_record.is_published,
         created_at=exam_record.created_at,
         questions=questions,
         warnings=exam_dict.get("warnings", []),
+    )
+
+
+@router.patch(
+    "/{exam_id}/publish",
+    response_model=ExamResponse,
+    summary="Publish or unpublish an assessment for students (Professor only)",
+)
+def publish_exam(
+    exam_id: int,
+    payload: ExamPublishRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("professor")),
+) -> ExamResponse:
+    """
+    Sets the publication visibility of an exam. Published exams are accessible to students.
+    """
+    exam = db.scalar(select(Exam).where(Exam.id == exam_id))
+    if not exam:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Exam with ID {exam_id} not found.",
+        )
+
+    if current_user.role == "student" and not getattr(exam, "is_published", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This assessment has not been published by the instructor yet.",
+        )
+
+    exam.is_published = payload.is_published
+    db.commit()
+    db.refresh(exam)
+
+    warnings: list[str] = []
+    try:
+        data = json.loads(exam.exam_json)
+        raw_questions = data.get("questions", [])
+        warnings = data.get("warnings", [])
+    except Exception:
+        raw_questions = []
+
+    return ExamResponse(
+        id=exam.id,
+        title=exam.title,
+        lesson_id=exam.lesson_id,
+        topic=exam.topic,
+        difficulty=exam.difficulty,
+        bloom_level=exam.bloom_level,
+        total_points=exam.total_points,
+        question_count=len(raw_questions),
+        is_published=exam.is_published,
+        created_at=exam.created_at,
+        questions=raw_questions,
+        warnings=warnings,
     )
 
 
@@ -133,7 +190,12 @@ def list_exams(
     """
     Returns a summary list of all generated assessments.
     """
-    exams = db.scalars(select(Exam).order_by(Exam.created_at.desc())).all()
+    if current_user.role == "student":
+        query = select(Exam).where(Exam.is_published == True).order_by(Exam.created_at.desc())
+    else:
+        query = select(Exam).order_by(Exam.created_at.desc())
+
+    exams = db.scalars(query).all()
     results: list[ExamListItem] = []
     for ex in exams:
         q_count = 0
@@ -154,6 +216,7 @@ def list_exams(
                 bloom_level=ex.bloom_level,
                 total_points=ex.total_points,
                 question_count=q_count,
+                is_published=getattr(ex, "is_published", False),
                 created_at=ex.created_at,
             )
         )
@@ -181,6 +244,12 @@ def get_exam_by_id(
             detail=f"Exam with ID {exam_id} not found.",
         )
 
+    if current_user.role == "student" and not getattr(exam, "is_published", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This assessment has not been published by the instructor yet.",
+        )
+
     warnings: list[str] = []
     try:
         data = json.loads(exam.exam_json)
@@ -204,6 +273,7 @@ def get_exam_by_id(
         bloom_level=exam.bloom_level,
         total_points=exam.total_points,
         question_count=len(raw_questions),
+        is_published=getattr(exam, "is_published", False),
         created_at=exam.created_at,
         questions=questions,
         warnings=warnings,

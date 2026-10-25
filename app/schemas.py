@@ -116,6 +116,7 @@ class ExamListItem(BaseModel):
     bloom_level: str
     total_points: float
     question_count: int
+    is_published: bool = False
     created_at: datetime
 
 
@@ -132,9 +133,15 @@ class ExamResponse(BaseModel):
     bloom_level: str
     total_points: float
     question_count: int
+    is_published: bool = False
     created_at: datetime
     questions: list[dict[str, Any]] | None = None
     warnings: list[str] = Field(default_factory=list)
+
+
+class ExamPublishRequest(BaseModel):
+    """Parameters for publishing or unpublishing an assessment."""
+    is_published: bool = True
 
 
 # ==============================================================================
