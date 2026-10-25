@@ -50,3 +50,8 @@ VECTOR_DB_PATH = (
     _vector_db_path if _vector_db_path.is_absolute() else BASE_DIR / _vector_db_path
 ).resolve()
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+# Ollama configuration (for local LLM provider)
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL_NAME = os.getenv("OLLAMA_MODEL_NAME", "llama3")
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "4096"))

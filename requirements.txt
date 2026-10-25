@@ -10,3 +10,14 @@ langchain-chroma
 langchain-huggingface
 sentence-transformers
 google-genai
+
+# Web backend
+fastapi
+uvicorn[standard]
+sqlalchemy
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+
+# Machine learning (analytics)
+scikit-learn
