@@ -1,17 +1,109 @@
-"""Student performance analytics and clustering module.
+"""
+Student performance analytics and clustering module.
 
-Provides feature matrix extraction from student attempt records, K-Means proficiency
-clustering with pedagogical labeling, and class-wide statistical aggregation.
+Provides feature matrix extraction, class-wide statistical aggregation,
+and production-ready ML inference using the trained student clustering pipeline.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any
+import warnings
+import joblib
 import numpy as np
+import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
+# تجاهل تحذيرات أسماء الخصائص عند تمرير البيانات للـ Scaler
+warnings.filterwarnings("ignore", category=UserWarning)
 
+# تحديد مسارات المشروع والنموذج المدرب
+try:
+    from scripts.config import OUTPUTS_DIR
+except ImportError:
+    OUTPUTS_DIR = os.path.join(os.path.dirname(__file__), "..", "outputs")
+
+MODEL_PATH = os.path.join(OUTPUTS_DIR, "student_cluster_pipeline.pkl")
+
+
+# ==========================================
+# 1. محرك الذكاء الاصطناعي (Trained ML Engine)
+# ==========================================
+class StudentAnalyticsEngine:
+    """Production inference engine using the pre-trained clustering pipeline."""
+
+    def __init__(self, model_path: str = MODEL_PATH):
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Pipeline model not found at: {model_path}")
+
+        bundle = joblib.load(model_path)
+        self.scaler = bundle["scaler"]
+        self.model = bundle["model"]
+        self.avg_weight = bundle.get("avg_weight", 1.5)
+        self.numeric_mapping = bundle["numeric_mapping"]
+        self.level_labels = bundle["level_labels"]
+        self.features = bundle.get(
+            "features",
+            ["avg_percentage", "max_percentage", "min_percentage", "exams_taken", "std_percentage"],
+        )
+
+    def predict_student(self, scores: list[float]) -> dict[str, Any]:
+        """توقع وتحديث مستوى طالب فردي لحظياً فور إنهاء اختباره."""
+        if len(scores) < 2:
+            return {
+                "level_code": -1,
+                "student_level": "Under Evaluation",
+                "is_evaluated": False,
+            }
+
+        avg_val = float(np.mean(scores))
+        max_val = float(np.max(scores))
+        min_val = float(np.min(scores))
+        exams_count = len(scores)
+
+        # حساب الانحراف المعياري مع التأمين ضد الـ NaN
+        std_val = float(np.std(scores, ddof=1)) if len(scores) > 1 else 0.0
+        if np.isnan(std_val):
+            std_val = 0.0
+
+        features_df = pd.DataFrame(
+            [[avg_val, max_val, min_val, exams_count, std_val]],
+            columns=self.features,
+        )
+        features_scaled = self.scaler.transform(features_df)
+        features_scaled[:, 0] *= self.avg_weight
+
+        raw_cluster = self.model.predict(features_scaled)[0]
+        code = int(self.numeric_mapping[raw_cluster])
+        label = self.level_labels[code]
+
+        return {
+            "level_code": code,
+            "student_level": label,
+            "is_evaluated": True,
+        }
+
+    def classify_students_dataframe(self, df_features: pd.DataFrame) -> pd.DataFrame:
+        """تصنيف دفعة كاملة من الطلاب دفعة واحدة (Batch Re-classification)."""
+        df = df_features.copy()
+        
+        # التأكد من ملء أي قيم مفقودة وترتيب الأعمدة بدقة
+        X = df[self.features].fillna(0)
+        X_scaled = self.scaler.transform(X)
+        X_scaled[:, 0] *= self.avg_weight
+
+        raw_clusters = self.model.predict(X_scaled)
+        df["level_code"] = [self.numeric_mapping[c] for c in raw_clusters]
+        df["student_level"] = df["level_code"].map(self.level_labels)
+
+        return df
+
+
+# ==========================================
+# 2. دوال استخراج البيانات وإحصائيات الداشبورد
+# ==========================================
 def _extract_attempt_score_pct(attempt: dict[str, Any]) -> float:
     """Extract or calculate the percentage score from an attempt record."""
     if "percentage" in attempt and attempt["percentage"] is not None:
@@ -75,10 +167,7 @@ def _extract_attempt_topic_scores(
 def build_feature_matrix(
     student_attempts: list[dict[str, Any]],
 ) -> tuple[np.ndarray, list[str], list[str]]:
-    """Build feature matrix from student attempt records.
-    Each student gets a feature vector: [avg_score_pct, avg_duration, attempt_count, ...per-topic scores]
-    Returns (feature_matrix: np.ndarray, student_ids: list[str], feature_names: list[str])
-    """
+    """Build feature matrix from student attempt records."""
     if not student_attempts:
         default_names = ["avg_score_pct", "avg_duration", "attempt_count"]
         return np.empty((0, 3), dtype=float), [], default_names
@@ -90,7 +179,12 @@ def build_feature_matrix(
         if not isinstance(attempt, dict):
             continue
 
-        raw_id = attempt.get("student_id") or attempt.get("student_name") or attempt.get("user_id") or "unknown"
+        raw_id = (
+            attempt.get("student_id")
+            or attempt.get("student_name")
+            or attempt.get("user_id")
+            or "unknown"
+        )
         sid = str(raw_id).strip()
         score_pct = max(0.0, min(100.0, _extract_attempt_score_pct(attempt)))
         duration = max(0.0, _extract_attempt_duration(attempt))
@@ -118,7 +212,9 @@ def build_feature_matrix(
         return np.empty((0, 3), dtype=float), [], default_names
 
     sorted_topics = sorted(discovered_topics)
-    feature_names = ["avg_score_pct", "avg_duration", "attempt_count"] + [f"topic_{t}" for t in sorted_topics]
+    feature_names = ["avg_score_pct", "avg_duration", "attempt_count"] + [
+        f"topic_{t}" for t in sorted_topics
+    ]
     student_ids = sorted(student_records.keys())
 
     rows: list[list[float]] = []
@@ -147,16 +243,14 @@ def cluster_students(
     n_clusters: int = 3,
     feature_names: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Run K-Means clustering and assign proficiency labels.
-    Returns {
-        'clusters': list[{'student_id': str, 'cluster': int, 'label': str, 'features': dict}],
-        'centroids': list[list[float]],
-        'labels': list[str],  # ['Advanced', 'Proficient', 'Needs Intervention']
-        'inertia': float
-    }
-    """
+    """Fallback runtime clustering for general cohort grouping."""
     n_students = len(student_ids)
-    if n_students == 0 or features.size == 0 or features.ndim != 2 or features.shape[0] != n_students:
+    if (
+        n_students == 0
+        or features.size == 0
+        or features.ndim != 2
+        or features.shape[0] != n_students
+    ):
         return {
             "clusters": [],
             "centroids": [],
@@ -176,16 +270,16 @@ def cluster_students(
     cluster_assignments = kmeans.fit_predict(scaled_features)
     inertia = float(kmeans.inertia_)
 
-    # Calculate average score percentage for each cluster to rank proficiency
     cluster_mean_scores: dict[int, float] = {}
     for c_id in range(k):
         mask = cluster_assignments == c_id
-        if np.any(mask):
-            cluster_mean_scores[c_id] = float(np.mean(features[mask, 0]))
-        else:
-            cluster_mean_scores[c_id] = 0.0
+        cluster_mean_scores[c_id] = (
+            float(np.mean(features[mask, 0])) if np.any(mask) else 0.0
+        )
 
-    ranked_clusters = sorted(range(k), key=lambda c: cluster_mean_scores[c], reverse=True)
+    ranked_clusters = sorted(
+        range(k), key=lambda c: cluster_mean_scores[c], reverse=True
+    )
 
     cluster_to_label: dict[int, str] = {}
     if k >= 3:
@@ -194,12 +288,18 @@ def cluster_students(
             cluster_to_label[mid_cluster] = "Proficient"
         cluster_to_label[ranked_clusters[-1]] = "Needs Intervention"
     elif k == 2:
-        cluster_to_label[ranked_clusters[0]] = "Advanced" if cluster_mean_scores[ranked_clusters[0]] >= 80.0 else "Proficient"
+        cluster_to_label[ranked_clusters[0]] = (
+            "Advanced"
+            if cluster_mean_scores[ranked_clusters[0]] >= 80.0
+            else "Proficient"
+        )
         cluster_to_label[ranked_clusters[1]] = "Needs Intervention"
     else:
         score = cluster_mean_scores[ranked_clusters[0]]
         cluster_to_label[ranked_clusters[0]] = (
-            "Advanced" if score >= 80.0 else ("Proficient" if score >= 60.0 else "Needs Intervention")
+            "Advanced"
+            if score >= 80.0
+            else ("Proficient" if score >= 60.0 else "Needs Intervention")
         )
 
     labels_list = [cluster_to_label[c_id] for c_id in range(k)]
@@ -242,16 +342,7 @@ def cluster_students(
 
 
 def get_class_analytics(attempts: list[dict[str, Any]]) -> dict[str, Any]:
-    """Compute class-wide statistics.
-    Returns {
-        'total_students': int,
-        'total_attempts': int,
-        'avg_score_pct': float,
-        'score_distribution': dict,  # histogram bins
-        'topic_performance': dict[str, float],  # topic -> avg score %
-        'difficulty_breakdown': dict[str, float],  # difficulty -> avg score %
-    }
-    """
+    """Compute class-wide statistics for dashboards."""
     if not attempts:
         return {
             "total_students": 0,
@@ -277,24 +368,30 @@ def get_class_analytics(attempts: list[dict[str, Any]]) -> dict[str, Any]:
         if not isinstance(attempt, dict):
             continue
 
-        raw_id = attempt.get("student_id") or attempt.get("student_name") or attempt.get("user_id")
+        raw_id = (
+            attempt.get("student_id")
+            or attempt.get("student_name")
+            or attempt.get("user_id")
+        )
         if raw_id:
             student_ids.add(str(raw_id).strip())
 
         score_pct = max(0.0, min(100.0, _extract_attempt_score_pct(attempt)))
         scores.append(score_pct)
 
-        # Topic scores
         topics = _extract_attempt_topic_scores(attempt, score_pct)
         for topic, pcts in topics.items():
             topic_scores.setdefault(topic, []).extend(pcts)
 
-        # Difficulty scores
-        if "difficulty_breakdown" in attempt and isinstance(attempt["difficulty_breakdown"], dict):
+        if "difficulty_breakdown" in attempt and isinstance(
+            attempt["difficulty_breakdown"], dict
+        ):
             for diff, val in attempt["difficulty_breakdown"].items():
                 if isinstance(val, (int, float)):
                     difficulty_scores.setdefault(str(diff).lower(), []).append(float(val))
-        elif "graded_answers" in attempt and isinstance(attempt["graded_answers"], list):
+        elif "graded_answers" in attempt and isinstance(
+            attempt["graded_answers"], list
+        ):
             diff_question_map: dict[str, list[tuple[float, float]]] = {}
             for ans in attempt["graded_answers"]:
                 if isinstance(ans, dict) and ans.get("difficulty"):
@@ -305,10 +402,16 @@ def get_class_analytics(attempts: list[dict[str, Any]]) -> dict[str, Any]:
             for diff, pairs in diff_question_map.items():
                 total_earned = sum(p[0] for p in pairs)
                 total_possible = sum(p[1] for p in pairs)
-                pct = (total_earned / total_possible * 100.0) if total_possible > 0 else 0.0
+                pct = (
+                    (total_earned / total_possible * 100.0)
+                    if total_possible > 0
+                    else 0.0
+                )
                 difficulty_scores.setdefault(diff, []).append(pct)
         elif attempt.get("difficulty"):
-            difficulty_scores.setdefault(str(attempt["difficulty"]).strip().lower(), []).append(score_pct)
+            difficulty_scores.setdefault(
+                str(attempt["difficulty"]).strip().lower(), []
+            ).append(score_pct)
 
     score_distribution = {
         "0-20": 0,
@@ -347,3 +450,14 @@ def get_class_analytics(attempts: list[dict[str, Any]]) -> dict[str, Any]:
         "topic_performance": topic_performance,
         "difficulty_breakdown": difficulty_breakdown,
     }
+
+
+# ==========================================
+# 3. اختبار ذاتي للملف (Smoke Test)
+# ==========================================
+if __name__ == "__main__":
+    engine = StudentAnalyticsEngine()
+    sample_scores = [85.0, 92.0, 78.0, 88.0]
+    result = engine.predict_student(sample_scores)
+    print("Pipeline Loaded Successfully!")
+    print("Sample Student Prediction:", result)
