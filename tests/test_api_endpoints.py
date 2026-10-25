@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
@@ -121,6 +124,99 @@ class ApiEndpointsTestCase(unittest.TestCase):
         r = self.client.get("/api/exams", headers=headers)
         self.assertEqual(r.status_code, 200)
         self.assertIsInstance(r.json(), list)
+
+    def test_04_exam_generation_returns_twenty_mocked_questions(self):
+        login_response = self.client.post(
+            "/api/auth/login",
+            json={"email": "drsmith@university.edu", "password": "securepassword123"},
+        )
+        if login_response.status_code != 200:
+            self.client.post(
+                "/api/auth/register",
+                json={
+                    "name": "Dr. Smith",
+                    "email": "drsmith@university.edu",
+                    "password": "securepassword123",
+                    "role": "professor",
+                },
+            )
+            login_response = self.client.post(
+                "/api/auth/login",
+                json={"email": "drsmith@university.edu", "password": "securepassword123"},
+            )
+        self.assertEqual(login_response.status_code, 200)
+        headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
+        docs = []
+        for index in range(20):
+            chunk_id = f"1-1-{index + 1:03d}"
+            docs.append(
+                type(
+                    "Document",
+                    (),
+                    {
+                        "page_content": f"Curriculum fact number {index + 1} supports a lesson objective.",
+                        "metadata": {
+                            "source": "curriculum.pdf",
+                            "lesson_id": "1-1",
+                            "lesson_title": "Lesson One",
+                            "chunk_id": chunk_id,
+                        },
+                    },
+                )()
+            )
+        docs_by_id = {doc.metadata["chunk_id"]: doc for doc in docs}
+
+        def mocked_model(prompt, **kwargs):
+            match = re.search(r"this chunk_id: ([A-Za-z0-9_-]+)", prompt)
+            self.assertIsNotNone(match)
+            chunk_id = match.group(1)
+            index = int(chunk_id.rsplit("-", 1)[1])
+            document = docs_by_id[chunk_id]
+            return json.dumps({
+                "question": f"Identify concept{index} principle{index}.",
+                "question_type": "short_answer",
+                "difficulty": "medium",
+                "bloom_level": "apply",
+                "bloom_rationale": "Applies a distinct curriculum fact.",
+                "options": [],
+                "correct_answer": "",
+                "reference_answer": f"Evidence answer{index}.",
+                "explanation": "The cited curriculum passage supports the answer.",
+                "max_score": 1,
+                "rubric": [{
+                    "criterion": "Identifies the fact",
+                    "points": 1,
+                    "description": "Names the distinct supported fact.",
+                }],
+                "source_refs": [{
+                    "source": "curriculum.pdf",
+                    "chunk_id": chunk_id,
+                    "evidence_quote": document.page_content,
+                }],
+            })
+
+        with (
+            patch("scripts.generation.validate_configuration", return_value=(True, [], "mock-model")),
+            patch("scripts.generation.retrieve_curriculum_context", return_value=docs),
+            patch("scripts.generation._send_completion", side_effect=mocked_model),
+            patch("scripts.generation.save_exam", return_value=Path("mock-exam.json")),
+        ):
+            response = self.client.post(
+                "/api/exams/generate",
+                headers=headers,
+                json={
+                    "lesson_id": "1-1",
+                    "topic": "Lesson One",
+                    "difficulty": "medium",
+                    "bloom_level": "apply",
+                    "question_types": ["short_answer"],
+                    "number_of_questions": 20,
+                },
+            )
+
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["question_count"], 20)
+        self.assertEqual(len(response.json()["questions"]), 20)
 
     @patch("app.routers.analytics_router.generate_student_feedback")
     def test_04_student_dashboard(self, mock_feedback):

@@ -49,7 +49,7 @@ def create_exam(
     current_user: User = Depends(require_role("professor")),
 ) -> ExamResponse:
     """
-    Generates curriculum-grounded assessment questions via Google Gemini and
+    Generates curriculum-grounded assessment questions via the configured LLM and
     persists the resulting exam specification in the database.
     """
     try:
@@ -107,6 +107,7 @@ def create_exam(
         question_count=len(questions),
         created_at=exam_record.created_at,
         questions=questions,
+        warnings=exam_dict.get("warnings", []),
     )
 
 
@@ -175,9 +176,11 @@ def get_exam_by_id(
             detail=f"Exam with ID {exam_id} not found.",
         )
 
+    warnings: list[str] = []
     try:
         data = json.loads(exam.exam_json)
         raw_questions = data.get("questions", [])
+        warnings = data.get("warnings", [])
     except Exception:
         raw_questions = []
 
@@ -198,4 +201,5 @@ def get_exam_by_id(
         question_count=len(raw_questions),
         created_at=exam.created_at,
         questions=questions,
+        warnings=warnings,
     )

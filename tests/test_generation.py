@@ -62,6 +62,19 @@ def question_for_type(**kwargs):
     return question
 
 
+def distinct_questions_for_type():
+    call_count = 0
+
+    def create(**kwargs):
+        nonlocal call_count
+        call_count += 1
+        question = question_for_type(**kwargs)
+        question["question"] = f"Explain concept {call_count} term{call_count}"
+        return question
+
+    return create
+
+
 class GenerationValidationTests(unittest.TestCase):
     def test_extracts_plain_and_fenced_json(self):
         expected = {"question": "test"}
@@ -81,6 +94,126 @@ class GenerationValidationTests(unittest.TestCase):
         question["correct_answer"] = "1"
         generation._validate_question(question)
         self.assertEqual(question["correct_answer"], "A")
+
+        question = sample_question()
+        question["correct_answer"] = "2"
+        question["reference_answer"] = "2: Unrelated option one"
+        generation._validate_question(question)
+        self.assertEqual(question["correct_answer"], "B")
+
+    def test_rejects_invalid_mcq_answer_keys(self):
+        for answer in ("", "BC", "5"):
+            question = sample_question()
+            question["correct_answer"] = answer
+            with self.subTest(answer=answer), self.assertRaisesRegex(
+                ValueError, "Correct answer must be one of"
+            ):
+                generation._validate_question(question)
+
+    def test_duplicate_detection_uses_question_and_answer_tokens(self):
+        original = {
+            "question": "Which process transforms raw data into useful information?",
+            "reference_answer": "Data analysis reveals patterns.",
+        }
+        near_duplicate = {
+            "question": "Which process turns raw data into useful information?",
+            "reference_answer": "Data analysis reveals patterns.",
+        }
+        different = {
+            "question": "What are the three stages of a curriculum review?",
+            "reference_answer": "Planning, review, and revision.",
+        }
+
+        self.assertTrue(generation._is_duplicate_question(near_duplicate, [original]))
+        self.assertTrue(generation._is_duplicate_question(original, [original]))
+        self.assertFalse(generation._is_duplicate_question(different, [original]))
+
+    def test_prompt_requires_focus_chunk_and_has_consistent_mcq_grounding(self):
+        prompt = generation._build_prompt(
+            "mcq",
+            "Lesson One",
+            "medium",
+            "apply",
+            [sample_document()],
+            focus_chunk_id="1-1-001",
+        )
+
+        self.assertIn(
+            "The question MUST test the facts in the chunk with this chunk_id: 1-1-001.",
+            prompt,
+        )
+        self.assertIn("The first listed context chunk is that chunk.", prompt)
+        self.assertIn(generation.MCQ_GROUNDING_RULE, prompt)
+        self.assertNotIn("less-obvious scenario", prompt)
+
+    def test_invalid_source_references_are_rejected_without_sentence_fallback(self):
+        for reference in (
+            {"chunk_id": "1-1-001"},
+            {"chunk_id": "1-1-001", "evidence_quote": "short"},
+            {"chunk_id": "missing", "evidence_quote": "Artificial intelligence supports data analysis."},
+        ):
+            with self.subTest(reference=reference), self.assertRaises(
+                generation.InvalidSourceRefError
+            ):
+                generation._canonicalize_source_refs([reference], [sample_document()])
+        self.assertFalse(hasattr(generation, "_find_first_sentence"))
+
+    def test_verbatim_quote_salvage_requires_eight_words_and_forty_characters(self):
+        document = SimpleNamespace(
+            page_content=(
+                "Learning assessment frameworks can improve instructional decisions "
+                "through careful curriculum planning and evidence-based decision making."
+            ),
+            metadata={"chunk_id": "1-1-001", "source": "curriculum.pdf"},
+        )
+        short_subquote = (
+            "This unrelated wording contains learning assessment frameworks."
+        )
+        with self.assertRaisesRegex(
+            generation.InvalidEvidenceQuoteError,
+            "not present in its curriculum chunk",
+        ):
+            generation._canonicalize_source_refs(
+                [{"chunk_id": "1-1-001", "evidence_quote": short_subquote}],
+                [document],
+            )
+        canonical = generation._canonicalize_source_refs(
+            [{
+                "chunk_id": "1-1-001",
+                "evidence_quote": (
+                    "A learning assessment frameworks can improve instructional decisions "
+                    "through careful curriculum planning and evidence-based decision making."
+                ),
+            }],
+            [document],
+        )
+        self.assertEqual(
+            canonical[0]["evidence_quote"],
+            document.page_content,
+        )
+
+    def test_verifier_uses_only_question_options_and_context(self):
+        question = sample_question()
+        question["explanation"] = "Do not include this private explanation."
+        with patch.object(
+            generation,
+            "_send_completion",
+            return_value=json.dumps({"answer": "B", "supported": True}),
+        ) as send_completion:
+            self.assertFalse(generation._verify_mcq_answer(question, [sample_document()]))
+
+        prompt = send_completion.call_args.args[0]
+        self.assertNotIn(question["explanation"], prompt)
+        self.assertNotIn("correct_answer", prompt)
+        self.assertNotIn('"reference_answer"', prompt)
+        self.assertEqual(send_completion.call_args.kwargs["temperature"], 0)
+
+        with patch.object(
+            generation,
+            "_send_completion",
+            return_value=json.dumps({"answer": "A", "supported": True}),
+        ):
+            self.assertTrue(generation._verify_mcq_answer(question, [sample_document()]))
 
     def test_rejects_mcq_reference_answer_that_disagrees_with_key(self):
         question = sample_question()
@@ -279,6 +412,7 @@ class GenerationValidationTests(unittest.TestCase):
         self.assertEqual(call["contents"], "Make a JSON object")
         self.assertEqual(call["config"].response_mime_type, "application/json")
         self.assertEqual(call["config"].max_output_tokens, generation.MAX_COMPLETION_TOKENS)
+        self.assertEqual(call["config"].temperature, generation.GENERATION_TEMPERATURE)
         client.close.assert_called_once()
 
     def test_gemini_authentication_error_is_actionable(self):
@@ -347,6 +481,41 @@ class GenerationValidationTests(unittest.TestCase):
         self.assertEqual(configs[1].max_output_tokens, generation.RETRY_COMPLETION_TOKENS)
         client.close.assert_called_once()
 
+    def test_gemini_max_tokens_retries_with_larger_output_budget(self):
+        client = unittest.mock.MagicMock()
+        client.models.generate_content.side_effect = [
+            SimpleNamespace(
+                text="",
+                candidates=[SimpleNamespace(finish_reason="MAX_TOKENS")],
+            ),
+            SimpleNamespace(text='{"ready":true}', candidates=[]),
+        ]
+        with (
+            patch.object(generation, "LLM_PROVIDER", "gemini"),
+            patch.object(generation, "GEMINI_API_KEY", "test-api-key"),
+            patch("google.genai.Client", return_value=client),
+        ):
+            response = generation._send_completion("test", max_tokens=8)
+
+        self.assertEqual(response, '{"ready":true}')
+        configs = [call.kwargs["config"] for call in client.models.generate_content.call_args_list]
+        self.assertEqual(configs[0].max_output_tokens, 8)
+        self.assertEqual(configs[1].max_output_tokens, generation.RETRY_COMPLETION_TOKENS)
+
+    def test_ollama_receives_temperature_and_num_predict(self):
+        fake_ollama = SimpleNamespace(
+            ChatOllama=unittest.mock.MagicMock(
+                return_value=SimpleNamespace(content=None, invoke=lambda prompt: SimpleNamespace(content='{"ready":true}'))
+            )
+        )
+        with patch.dict("sys.modules", {"langchain_ollama": fake_ollama}):
+            response = generation._send_ollama_completion("test", max_tokens=123)
+
+        self.assertEqual(response, '{"ready":true}')
+        call = fake_ollama.ChatOllama.call_args.kwargs
+        self.assertEqual(call["temperature"], generation.GENERATION_TEMPERATURE)
+        self.assertEqual(call["num_predict"], 123)
+
     def test_gemini_api_error_does_not_expose_api_key(self):
         from google.genai.errors import APIError
 
@@ -364,19 +533,257 @@ class GenerationValidationTests(unittest.TestCase):
             generation._send_completion("test")
         self.assertNotIn(secret, str(raised.exception))
 
+    def test_invalid_source_ref_is_retried_by_single_question_generation(self):
+        invalid = sample_question()
+        invalid["source_refs"][0]["chunk_id"] = "not-provided"
+        valid = sample_question()
+        with patch.object(
+            generation,
+            "_send_completion",
+            side_effect=[json.dumps(invalid), json.dumps(valid)],
+        ) as send_completion:
+            generation.generate_single_question(
+                topic="Lesson One",
+                question_type="mcq",
+                context_docs=[sample_document()],
+            )
+
+        self.assertEqual(send_completion.call_count, 2)
+        self.assertIn("invalid source reference", send_completion.call_args.args[0])
+
+    def test_focus_chunk_must_be_cited_and_is_retried(self):
+        focus_doc = sample_document()
+        other_doc = sample_document()
+        other_doc.metadata["chunk_id"] = "1-1-002"
+        invalid = sample_question()
+        invalid["source_refs"][0]["chunk_id"] = "1-1-002"
+        valid = sample_question()
+        with patch.object(
+            generation,
+            "_send_completion",
+            side_effect=[json.dumps(invalid), json.dumps(valid)],
+        ) as send_completion:
+            question = generation.generate_single_question(
+                topic="Lesson One",
+                question_type="mcq",
+                context_docs=[focus_doc, other_doc],
+                focus_chunk_id="1-1-001",
+            )
+
+        self.assertEqual(question["source_refs"][0]["chunk_id"], "1-1-001")
+        self.assertEqual(send_completion.call_count, 2)
+        self.assertIn("must cite its focus chunk", send_completion.call_args.args[0])
+
+    def test_retrieval_caps_k_to_unique_available_lesson_chunks(self):
+        metadatas = [
+            {"chunk_id": "1-1-001"},
+            {"chunk_id": "1-1-001"},
+            {"chunk_id": "1-1-002"},
+        ]
+        store = SimpleNamespace(
+            _collection=SimpleNamespace(
+                get=lambda where, include: {"metadatas": metadatas}
+            )
+        )
+        with (
+            patch.object(generation, "load_curriculum_store", return_value=store),
+            patch.object(generation, "retrieve", return_value=[sample_document()]) as retrieve_mock,
+        ):
+            generation.retrieve_curriculum_context(
+                "Lesson One",
+                lesson_id="1-1",
+                k=20,
+            )
+
+        retrieve_mock.assert_called_once_with(store, query="Lesson One", k=2, lesson_id="1-1")
+
+    def test_generate_exam_assigns_unique_focus_chunks(self):
+        docs = []
+        for index in range(4):
+            doc = sample_document()
+            doc.metadata["chunk_id"] = f"1-1-{index + 1:03d}"
+            docs.append(doc)
+        calls = []
+
+        def create_question(**kwargs):
+            calls.append(kwargs)
+            question = question_for_type(**kwargs)
+            question["question"] = f"Explain concept {len(calls)} term{len(calls)}"
+            return question
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with (
+                patch.object(generation, "validate_configuration", return_value=(True, [], "test-model")),
+                patch.object(generation, "generate_single_question", side_effect=create_question),
+            ):
+                generation.generate_exam(
+                    "Lesson One",
+                    number_of_questions=4,
+                    lesson_id="1-1",
+                    context_docs=docs,
+                    output_dir=temporary_directory,
+                    verify_answers=False,
+                )
+
+        self.assertEqual(
+            [call["focus_chunk_id"] for call in calls],
+            ["1-1-001", "1-1-002", "1-1-003", "1-1-004"],
+        )
+        self.assertEqual(
+            [call["context_docs"][0].metadata["chunk_id"] for call in calls],
+            [call["focus_chunk_id"] for call in calls],
+        )
+        self.assertTrue(all(len(call["context_docs"]) <= 4 for call in calls))
+
+    def test_generate_exam_retries_duplicate_with_correction_and_higher_temperature(self):
+        call_count = 0
+
+        def create_question(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            question = question_for_type(**kwargs)
+            question["question"] = (
+                "Explain curriculum principle alpha."
+                if call_count < 3
+                else "Compare the three stages used in curriculum planning."
+            )
+            return question
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with (
+                patch.object(generation, "validate_configuration", return_value=(True, [], "test-model")),
+                patch.object(generation, "generate_single_question", side_effect=create_question) as generate,
+            ):
+                exam, _ = generation.generate_exam(
+                    "Lesson One",
+                    question_types=["short_answer"],
+                    number_of_questions=2,
+                    lesson_id="1-1",
+                    context_docs=[sample_document()],
+                    output_dir=temporary_directory,
+                    verify_answers=False,
+                )
+
+        self.assertEqual(exam["question_count"], 2)
+        self.assertEqual(generate.call_count, 3)
+        self.assertIn("Explain curriculum principle alpha.", generate.call_args.kwargs["correction_message"])
+        self.assertEqual(generate.call_args.kwargs["temperature"], generation.GENERATION_TEMPERATURE + 0.2)
+
+    def test_generate_exam_fails_after_three_attempts_or_skips_when_partial_allowed(self):
+        def one_success_then_failures():
+            call_count = 0
+
+            def create_question(**kwargs):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    question = question_for_type(**kwargs)
+                    question["question"] = "Describe the first distinct curriculum principle."
+                    return question
+                raise ValueError("invalid mock response")
+
+            return create_question
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with (
+                patch.object(generation, "validate_configuration", return_value=(True, [], "test-model")),
+                patch.object(generation, "generate_single_question", side_effect=ValueError("invalid mock response")) as generate,
+                self.assertRaisesRegex(ValueError, "Q01 failed after 3 attempts"),
+            ):
+                generation.generate_exam(
+                    "Lesson One",
+                    question_types=["short_answer"],
+                    number_of_questions=1,
+                    lesson_id="1-1",
+                    context_docs=[sample_document()],
+                    output_dir=temporary_directory,
+                    verify_answers=False,
+                )
+            self.assertEqual(generate.call_count, 3)
+
+            with (
+                patch.object(generation, "validate_configuration", return_value=(True, [], "test-model")),
+                patch.object(
+                    generation,
+                    "generate_single_question",
+                    side_effect=one_success_then_failures(),
+                ),
+            ):
+                exam, _ = generation.generate_exam(
+                    "Lesson One",
+                    question_types=["short_answer"],
+                    number_of_questions=2,
+                    lesson_id="1-1",
+                    context_docs=[sample_document()],
+                    output_dir=temporary_directory,
+                    allow_partial=True,
+                    verify_answers=False,
+                )
+
+        self.assertEqual(exam["question_count"], 1)
+        self.assertEqual(exam["questions"][0]["question_id"], "Q01")
+        self.assertTrue(any("Q02 was skipped" in warning for warning in exam["warnings"]))
+
+    def test_provider_error_is_not_retried_by_question_loop(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with (
+                patch.object(generation, "validate_configuration", return_value=(True, [], "test-model")),
+                patch.object(
+                    generation,
+                    "generate_single_question",
+                    side_effect=generation.LLMProviderError("Gemini quota or rate limit exceeded"),
+                ) as generate,
+                self.assertRaisesRegex(generation.LLMProviderError, "quota or rate limit"),
+            ):
+                generation.generate_exam(
+                    "Lesson One",
+                    number_of_questions=1,
+                    lesson_id="1-1",
+                    context_docs=[sample_document()],
+                    output_dir=temporary_directory,
+                    verify_answers=False,
+                )
+
+        self.assertEqual(generate.call_count, 1)
+
+    def test_failed_mcq_verification_retries_and_marks_accepted_question(self):
+        first = sample_question()
+        second = sample_question()
+        second["question"] = "Which curriculum process supports evidence-based planning?"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with (
+                patch.object(generation, "validate_configuration", return_value=(True, [], "test-model")),
+                patch.object(generation, "generate_single_question", side_effect=[first, second]) as generate,
+                patch.object(generation, "_verify_mcq_answer", side_effect=[False, True]) as verify,
+            ):
+                exam, _ = generation.generate_exam(
+                    "Lesson One",
+                    question_types=["mcq"],
+                    number_of_questions=1,
+                    lesson_id="1-1",
+                    context_docs=[sample_document()],
+                    output_dir=temporary_directory,
+                )
+
+        self.assertEqual(generate.call_count, 2)
+        self.assertEqual(verify.call_count, 2)
+        self.assertTrue(exam["questions"][0]["verified"])
+
     def test_generation_saves_unique_validated_exams(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             output_dir = Path(temporary_directory)
             with (
                 patch.object(generation, "validate_configuration", return_value=(True, [], "test-model")),
                 patch.object(generation, "retrieve_curriculum_context", return_value=[sample_document()]),
-                patch.object(generation, "generate_single_question", side_effect=lambda **kwargs: sample_question()),
+                patch.object(generation, "generate_single_question", side_effect=distinct_questions_for_type()),
             ):
                 _, first_path = generation.generate_exam(
-                    "artificial intelligence", lesson_id="1-1", output_dir=output_dir
+                    "artificial intelligence", lesson_id="1-1", output_dir=output_dir,
+                    verify_answers=False,
                 )
                 _, second_path = generation.generate_exam(
-                    "artificial intelligence", lesson_id="1-1", output_dir=output_dir
+                    "artificial intelligence", lesson_id="1-1", output_dir=output_dir,
+                    verify_answers=False,
                 )
             self.assertNotEqual(first_path, second_path)
             self.assertEqual(len(list(output_dir.glob("*.json"))), 2)
@@ -416,7 +823,7 @@ class GenerationValidationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             with (
                 patch.object(generation, "validate_configuration", return_value=(True, [], "test-model")),
-                patch.object(generation, "generate_single_question", side_effect=question_for_type),
+                patch.object(generation, "generate_single_question", side_effect=distinct_questions_for_type()),
             ):
                 exam, _ = generation.generate_exam(
                     topic="Lesson One",
@@ -424,6 +831,7 @@ class GenerationValidationTests(unittest.TestCase):
                     lesson_id="1-1",
                     context_docs=docs,
                     output_dir=temporary_directory,
+                    verify_answers=False,
                 )
 
         self.assertEqual(exam["lesson_id"], "1-1")
@@ -434,6 +842,8 @@ class GenerationValidationTests(unittest.TestCase):
             {kind: sum(q["question_type"] == kind for q in exam["questions"]) for kind in generation.VALID_QUESTION_TYPES},
             {"mcq": 4, "short_answer": 3, "essay": 3},
         )
+        self.assertEqual(len(exam["warnings"]), 1)
+        self.assertIn("Only 1 unique curriculum chunks", exam["warnings"][0])
 
     def test_lesson_exam_rejects_context_from_another_lesson(self):
         with (
@@ -463,7 +873,7 @@ class GenerationValidationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             with (
                 patch.object(generation, "validate_configuration", return_value=(True, [], "test-model")),
-                patch.object(generation, "generate_single_question", side_effect=question_for_type),
+                patch.object(generation, "generate_single_question", side_effect=distinct_questions_for_type()),
             ):
                 exam, _ = generation.generate_exam(
                     topic="Lesson One",
@@ -471,6 +881,7 @@ class GenerationValidationTests(unittest.TestCase):
                     lesson_id="1-1",
                     context_docs=[sample_document()],
                     output_dir=temporary_directory,
+                    verify_answers=False,
                 )
 
         self.assertEqual(exam["question_count"], 11)

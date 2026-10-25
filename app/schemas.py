@@ -134,6 +134,7 @@ class ExamResponse(BaseModel):
     question_count: int
     created_at: datetime
     questions: list[dict[str, Any]] | None = None
+    warnings: list[str] = Field(default_factory=list)
 
 
 # ==============================================================================

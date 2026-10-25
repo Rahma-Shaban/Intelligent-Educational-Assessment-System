@@ -64,3 +64,5 @@ data/processed/chunks.jsonl
 # Outputs (keep directory tracked with .gitkeep)
 outputs/*
 !outputs/.gitkeep
+
+frontend/node_modules/

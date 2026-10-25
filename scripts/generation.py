@@ -1,7 +1,7 @@
 """Safe exam generation for the Intelligent Educational Assessment System.
 
 This module retrieves curriculum-grounded context from the existing Chroma vector
-store, generates exam questions through the Google Gemini API, validates
+store, generates exam questions through the Google Gemini or Ollama API, validates
 structured output, and saves generated assessments under outputs/ without
 overwriting earlier files.
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import sys
@@ -45,13 +46,28 @@ VALID_QUESTION_TYPES = {"mcq", "short_answer", "essay"}
 VALID_DIFFICULTY = {"easy", "medium", "hard"}
 VALID_BLOOM_LEVELS = {"remember", "understand", "apply", "analyze", "evaluate", "create"}
 DEFAULT_QUESTION_TYPES = ["mcq", "short_answer", "essay"]
+GENERATION_TEMPERATURE = 0.4
+MAX_CHUNK_CHARS = 2500
+MAX_CONTEXT_CHUNKS = 8
 MAX_COMPLETION_ATTEMPTS = 2
 MAX_COMPLETION_TOKENS = 4096
 RETRY_COMPLETION_TOKENS = 8192
 MAX_QUESTION_GENERATION_ATTEMPTS = 2
+MAX_PER_QUESTION_RETRIES = 3
 
 
-class InvalidEvidenceQuoteError(ValueError):
+logger = logging.getLogger(__name__)
+
+
+class LLMProviderError(ValueError):
+    """Raised for provider failures that should not be retried as question errors."""
+
+
+class InvalidSourceRefError(ValueError):
+    """Raised when a model cites a missing or invalid curriculum source."""
+
+
+class InvalidEvidenceQuoteError(InvalidSourceRefError):
     """Raised when a model citation quote does not occur in its cited chunk."""
 
 
@@ -174,10 +190,12 @@ def _validate_question(question: dict[str, Any]) -> None:
         or not ref.get("source")
         or not ref.get("chunk_id")
         or not isinstance(ref.get("evidence_quote"), str)
-        or len(ref["evidence_quote"].strip()) < 12
+        or not ref["evidence_quote"].strip()
         for ref in question["source_refs"]
     ):
-        raise ValueError("Each source reference must identify a source, chunk, and evidence quote")
+        raise InvalidSourceRefError(
+            "Each source reference must identify a source, chunk, and evidence quote"
+        )
 
     if q_type == "mcq":
         options = question.get("options")
@@ -192,10 +210,11 @@ def _validate_question(question: dict[str, Any]) -> None:
         if "correct_answer" not in question:
             raise ValueError("MCQ missing correct_answer")
         correct = str(question["correct_answer"]).strip().upper()
-        if correct not in {"A", "B", "C", "D", "1", "2", "3", "4"}:
+        if correct in {"1", "2", "3", "4"}:
+            correct = "ABCD"[int(correct) - 1]
+        if correct not in {"A", "B", "C", "D"}:
             raise ValueError("Correct answer must be one of A/B/C/D or 1/2/3/4")
-        correct_index = "ABCD".index(correct) if correct in "ABCD" else int(correct) - 1
-        question["correct_answer"] = "ABCD"[correct_index]
+        question["correct_answer"] = correct
         reference_match = re.match(
             r"^\s*([A-D1-4])(?:(?:\s*[:.)\-]\s*(.*))|$)",
             question["reference_answer"],
@@ -203,9 +222,7 @@ def _validate_question(question: dict[str, Any]) -> None:
         )
         if reference_match:
             reference_label = reference_match.group(1).upper()
-            if reference_label in "ABCD":
-                reference_label = reference_label
-            else:
+            if reference_label in {"1", "2", "3", "4"}:
                 reference_label = "ABCD"[int(reference_label) - 1]
             if reference_label != question["correct_answer"]:
                 raise ValueError("MCQ reference_answer does not match correct_answer")
@@ -259,6 +276,13 @@ def _validate_question(question: dict[str, Any]) -> None:
     question["bloom_level"] = bloom_level
 
 
+MCQ_GROUNDING_RULE = (
+    "The scenario may be new, but every fact needed to choose the correct answer must be stated in the "
+    "curriculum context. Exactly one option must be supported by the context; each distractor must be clearly "
+    "contradicted by or unsupported by the context. Do not use outside knowledge."
+)
+
+
 def _build_prompt(
     question_type: str,
     topic: str,
@@ -266,16 +290,36 @@ def _build_prompt(
     bloom_level: str,
     context_docs: list[Any],
     custom_prompt: str | None = None,
-    previous_questions: list[str] | None = None,
+    previous_questions: list[str | dict[str, str]] | None = None,
+    focus_chunk_id: str | None = None,
 ) -> str:
     context_sections = []
-    for doc in context_docs[:8]:
-        content = (doc.page_content if hasattr(doc, "page_content") else str(doc))[:2500]
+    for doc in context_docs[:MAX_CONTEXT_CHUNKS]:
+        full_content = doc.page_content if hasattr(doc, "page_content") else str(doc)
+        content = full_content[:MAX_CHUNK_CHARS]
+        if len(full_content) > MAX_CHUNK_CHARS:
+            chunk_id = (getattr(doc, "metadata", {}) or {}).get("chunk_id", "unknown")
+            logger.warning(
+                "Truncated curriculum chunk %s from %d to %d characters",
+                chunk_id,
+                len(full_content),
+                MAX_CHUNK_CHARS,
+            )
         references = _build_source_refs([doc])
         context_sections.append(
             f"Source references: {json.dumps(references, ensure_ascii=False)}\nContent:\n{content}"
         )
     context_text = "\n\n---\n\n".join(context_sections)
+    covered_questions = []
+    for previous in previous_questions or []:
+        if isinstance(previous, dict):
+            question_text = str(previous.get("question", "")).strip()
+            reference_answer = str(previous.get("reference_answer", "")).strip()
+            covered_questions.append(
+                f"Question: {question_text}; reference answer: {reference_answer[:150]}"
+            )
+        else:
+            covered_questions.append(f"Question: {previous}")
 
     if custom_prompt:
         task = custom_prompt
@@ -284,8 +328,7 @@ def _build_prompt(
             "Generate one multiple-choice question with exactly four distinct options, exactly one correct answer, "
             "a brief reference answer, a one-paragraph explanation, and a single-criterion rubric worth exactly 1 point "
             "(correct selected option = 1, otherwise = 0). Do not split one selected-answer question across overlapping criteria. "
-            "When Bloom level is apply, describe a new, less-obvious scenario and ask the student to transfer a lesson idea; "
-            "make distractors plausible but ensure only one is supported as correct by the curriculum."
+            f"{MCQ_GROUNDING_RULE}"
         )
     elif question_type == "short_answer":
         task = (
@@ -353,50 +396,41 @@ Return valid JSON only with this exact structure:
 }}
 
 For MCQs, reference_answer must be "correct letter: exact option text". For short-answer or essay questions, set "options" to [] and "correct_answer" to ""; max_score must equal the sum of rubric points. Written-question rubric criteria must be distinct, non-overlapping, and directly score separate required elements of the prompt. Keep source_refs non-empty. Select only the chunk references that directly support the question, correct answer, or explanation; do not cite every provided chunk. Each evidence_quote must be copied verbatim from that chunk. Do not invent chunk IDs, source names, or quotations. Set bloom_level to the requested cognitive process; do not label simple recall as application.
-When Bloom level is apply, use a new scenario rather than asking the student to repeat a table entry. For remember/understand, test recall or explanation; for analyze/evaluate/create, require comparison, judgment, or production appropriate to the selected level. Explain the cognitive task in bloom_rationale so the teacher can review the classification.
+For apply-level MCQs: {MCQ_GROUNDING_RULE} For other apply-level questions, use a new scenario rather than asking the student to repeat a table entry. For remember/understand, test recall or explanation; for analyze/evaluate/create, require comparison, judgment, or production appropriate to the selected level. Explain the cognitive task in bloom_rationale so the teacher can review the classification.
+Do NOT test any fact already covered by the previously generated questions. Pick a different fact, rule, or example from the focus chunk.
+{f"The question MUST test the facts in the chunk with this chunk_id: {focus_chunk_id}. The first listed context chunk is that chunk." if focus_chunk_id else ""}
 
 Previously generated questions to avoid repeating:
-{json.dumps(previous_questions or [], ensure_ascii=False)}
+{json.dumps(covered_questions, ensure_ascii=False)}
 
 Curriculum context:
 {context_text}
 """.strip()
 
 
-def _find_first_sentence(content: str, min_chars: int = 20) -> str | None:
-    """Extract the first meaningful complete sentence from curriculum content."""
-    lines = [line.strip() for line in content.splitlines() if line.strip()]
-    for line in lines:
-        if line.startswith(("#", "•", "?", "❓", "Lesson")):
-            continue
-        for s in re.split(r'(?<=[.!?])\s+', line):
-            cleaned = " ".join(s.split()).strip()
-            if len(cleaned) >= min_chars:
-                return cleaned
-    flat = " ".join(content.split())
-    if len(flat) >= min_chars:
-        return flat[:80]
-    return None
-
-
-def _find_verbatim_subquote(quote: str, content: str, min_chars: int = 20) -> str | None:
+def _find_verbatim_subquote(
+    quote: str,
+    content: str,
+    min_words: int = 8,
+    min_chars: int = 40,
+) -> str | None:
     """Find the longest contiguous word sequence from quote that appears verbatim in content."""
-    norm_content = " ".join(content.split()).casefold()
     words = quote.split()
-    for window_len in range(len(words), 3, -1):
+    for window_len in range(len(words), min_words - 1, -1):
         for start in range(len(words) - window_len + 1):
             sub = " ".join(words[start:start + window_len])
-            norm_sub = " ".join(sub.split()).casefold()
-            if len(norm_sub) >= min_chars and norm_sub in norm_content:
-                idx = norm_content.find(norm_sub)
-                orig_flat = " ".join(content.split())
-                return orig_flat[idx:idx + len(norm_sub)]
+            if len(sub) < min_chars:
+                continue
+            pattern = r"\s+".join(re.escape(word) for word in words[start:start + window_len])
+            match = re.search(pattern, content, flags=re.IGNORECASE | re.UNICODE)
+            if match and len(match.group(0)) >= min_chars:
+                return match.group(0)
     return None
 
 
 def _canonicalize_source_refs(source_refs: Any, context_docs: list[Any]) -> list[dict[str, Any]]:
     if not isinstance(source_refs, list) or not source_refs:
-        raise ValueError("Question must cite at least one supporting curriculum chunk")
+        raise InvalidSourceRefError("Question must cite at least one supporting curriculum chunk")
 
     documents_by_chunk = {
         str((getattr(doc, "metadata", {}) or {}).get("chunk_id")): doc
@@ -405,34 +439,31 @@ def _canonicalize_source_refs(source_refs: Any, context_docs: list[Any]) -> list
     }
     normalized_refs: list[dict[str, Any]] = []
     seen_chunks: set[str] = set()
-    errors: list[str] = []
     for ref in source_refs:
         if not isinstance(ref, dict):
-            raise ValueError("Each source reference must be a JSON object")
+            raise InvalidSourceRefError("Each source reference must be a JSON object")
         chunk_id = str(ref.get("chunk_id", "")).strip()
         doc = documents_by_chunk.get(chunk_id)
         if doc is None:
-            errors.append(f"Source reference chunk_id '{chunk_id}' was not provided as curriculum context")
-            continue
+            raise InvalidSourceRefError(
+                f"Source reference chunk_id '{chunk_id}' was not provided as curriculum context"
+            )
         page_content = getattr(doc, "page_content", "")
         normalized_content = " ".join(page_content.split()).casefold()
         evidence_quote = ref.get("evidence_quote")
         if not isinstance(evidence_quote, str) or len(evidence_quote.strip()) < 12:
-            candidate = _find_first_sentence(page_content, min_chars=20)
-            if candidate:
-                evidence_quote = candidate
+            raise InvalidSourceRefError(
+                f"Source reference '{chunk_id}' must include a useful evidence_quote"
+            )
+        normalized_quote = " ".join(evidence_quote.split()).casefold()
+        if normalized_quote not in normalized_content:
+            subquote = _find_verbatim_subquote(evidence_quote, page_content)
+            if subquote:
+                evidence_quote = subquote
             else:
-                errors.append(f"Source reference '{chunk_id}' must include a useful evidence_quote")
-                continue
-        else:
-            normalized_quote = " ".join(evidence_quote.split()).casefold()
-            if normalized_quote not in normalized_content:
-                subquote = _find_verbatim_subquote(evidence_quote, page_content, min_chars=20)
-                if subquote:
-                    evidence_quote = subquote
-                else:
-                    errors.append(f"Source reference '{chunk_id}' evidence_quote is not present in its curriculum chunk")
-                    continue
+                raise InvalidEvidenceQuoteError(
+                    f"Source reference '{chunk_id}' evidence_quote is not present in its curriculum chunk"
+                )
         if chunk_id not in seen_chunks:
             canonical_ref = _build_source_refs([doc])[0]
             canonical_ref["evidence_quote"] = evidence_quote.strip()
@@ -440,10 +471,7 @@ def _canonicalize_source_refs(source_refs: Any, context_docs: list[Any]) -> list
             seen_chunks.add(chunk_id)
 
     if not normalized_refs:
-        first_error = errors[0] if errors else "Question must cite at least one supporting curriculum chunk"
-        if "not present in its curriculum chunk" in first_error:
-            raise InvalidEvidenceQuoteError(first_error)
-        raise ValueError(first_error)
+        raise InvalidSourceRefError("Question must cite at least one supporting curriculum chunk")
     return normalized_refs
 
 
@@ -452,11 +480,12 @@ def _send_gemini_completion(
     *,
     max_tokens: int = MAX_COMPLETION_TOKENS,
     max_attempts: int = MAX_COMPLETION_ATTEMPTS,
+    temperature: float = GENERATION_TEMPERATURE,
 ) -> str:
     if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY is missing from the current project configuration")
+        raise LLMProviderError("GEMINI_API_KEY is missing from the current project configuration")
     if not LLM_MODEL_NAME:
-        raise ValueError("LLM_MODEL_NAME is missing from the current project configuration")
+        raise LLMProviderError("LLM_MODEL_NAME is missing from the current project configuration")
 
     from google import genai
     from google.genai import errors, types
@@ -471,7 +500,7 @@ def _send_gemini_completion(
                     model=LLM_MODEL_NAME,
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        temperature=0,
+                        temperature=temperature,
                         max_output_tokens=output_budget,
                         response_mime_type="application/json",
                     ),
@@ -479,25 +508,43 @@ def _send_gemini_completion(
             except errors.APIError as exc:
                 status = exc.code
                 if "API_KEY_INVALID" in str(exc) or "API key not valid" in str(exc) or status in {401, 403}:
-                    raise ValueError(
+                    raise LLMProviderError(
                         "Gemini API authentication or permission failed. Verify GEMINI_API_KEY "
                         "and that the Gemini API is enabled for its Google AI Studio project."
                     ) from exc
                 if status in {400, 404}:
-                    raise ValueError(
+                    raise LLMProviderError(
                         f"Gemini model '{LLM_MODEL_NAME}' is unavailable or the request is "
                         f"unsupported (HTTP {status}). Check the model name and API access."
                     ) from exc
                 if status == 429:
-                    raise ValueError(
+                    raise LLMProviderError(
                         "Gemini API quota or rate limit exceeded. Check the project's model quota "
                         "and billing in Google AI Studio, then retry."
                     ) from exc
                 if status is not None and status >= 500:
-                    raise ValueError(f"Gemini API server error (HTTP {status}); retry later.") from exc
+                    raise LLMProviderError(f"Gemini API server error (HTTP {status}); retry later.") from exc
                 detail = str(exc).replace(GEMINI_API_KEY, "[REDACTED]")
                 raise ValueError(f"Gemini API request failed: {detail}") from exc
 
+            candidates = getattr(response, "candidates", None) or []
+            finish_reason = getattr(candidates[0], "finish_reason", None) if candidates else None
+            finish_reason_name = getattr(finish_reason, "name", str(finish_reason or "unknown"))
+            usage_metadata = getattr(response, "usage_metadata", None)
+            thought_tokens = getattr(usage_metadata, "thoughts_token_count", None)
+            logger.debug(
+                "Gemini finish_reason=%s thought_tokens=%s",
+                finish_reason_name,
+                thought_tokens if thought_tokens is not None else "unavailable",
+            )
+            if "MAX_TOKENS" in str(finish_reason_name).upper():
+                if attempt + 1 == max_attempts:
+                    raise ValueError(
+                        f"Gemini response stopped with MAX_TOKENS after {max_attempts} attempt(s); "
+                        "increase the output token budget or shorten the prompt."
+                    )
+                empty_response_details.append("response stopped with MAX_TOKENS")
+                continue
             content = response.text
             if isinstance(content, str) and content.strip():
                 return content
@@ -523,10 +570,18 @@ def _send_ollama_completion(
     *,
     max_tokens: int = MAX_COMPLETION_TOKENS,
     max_attempts: int = MAX_COMPLETION_ATTEMPTS,
+    temperature: float = GENERATION_TEMPERATURE,
 ) -> str:
     model_name = OLLAMA_MODEL_NAME or (LLM_MODEL_NAME if LLM_MODEL_NAME and not LLM_MODEL_NAME.startswith("gemini") else None) or "llama3.2"
     base_url = OLLAMA_BASE_URL or "http://localhost:11434"
     num_ctx = OLLAMA_NUM_CTX or 8192
+    estimated_tokens = len(prompt) / 4
+    if estimated_tokens > num_ctx * 0.75:
+        logger.warning(
+            "Estimated Ollama prompt size %.0f tokens exceeds 75%% of num_ctx=%d",
+            estimated_tokens,
+            num_ctx,
+        )
 
     try:
         from langchain_ollama import ChatOllama
@@ -542,9 +597,10 @@ def _send_ollama_completion(
             llm = ChatOllama(
                 model=model_name,
                 base_url=base_url,
-                temperature=0,
+                temperature=temperature,
                 format="json",
                 num_ctx=num_ctx,
+                num_predict=max_tokens,
             )
             response = llm.invoke(prompt)
             content = getattr(response, "content", "")
@@ -564,10 +620,17 @@ def _send_ollama_completion(
                     "Ensure the Ollama service is running (e.g., 'ollama serve')."
                 ) from exc
             if "not found" in err_msg.lower() or "404" in err_msg:
-                raise ValueError(
+                raise LLMProviderError(
                     f"Ollama model '{model_name}' was not found on the server at '{base_url}'. "
                     f"Download it using: ollama pull {model_name}"
                 ) from exc
+            status = getattr(exc, "status_code", None)
+            if status in {401, 403} or "unauthorized" in err_msg.lower() or "forbidden" in err_msg.lower():
+                raise LLMProviderError(f"Ollama authentication or permission failed: {err_msg}") from exc
+            if status == 429 or "rate limit" in err_msg.lower() or "quota" in err_msg.lower():
+                raise LLMProviderError(f"Ollama quota or rate limit exceeded: {err_msg}") from exc
+            if (isinstance(status, int) and status >= 500) or "server error" in err_msg.lower():
+                raise LLMProviderError(f"Ollama server error: {err_msg}") from exc
             if attempt + 1 == max_attempts:
                 raise ValueError(f"Ollama generation failed: {err_msg}") from exc
 
@@ -588,6 +651,7 @@ def _send_completion(
     *,
     max_tokens: int = MAX_COMPLETION_TOKENS,
     max_attempts: int = MAX_COMPLETION_ATTEMPTS,
+    temperature: float = GENERATION_TEMPERATURE,
 ) -> str:
     if LLM_PROVIDER not in {"gemini", "ollama"}:
         raise ValueError("LLM_PROVIDER must be 'gemini' or 'ollama'")
@@ -595,8 +659,18 @@ def _send_completion(
         raise ValueError("max_tokens and max_attempts must be positive")
 
     if LLM_PROVIDER == "ollama":
-        return _send_ollama_completion(prompt, max_tokens=max_tokens, max_attempts=max_attempts)
-    return _send_gemini_completion(prompt, max_tokens=max_tokens, max_attempts=max_attempts)
+        return _send_ollama_completion(
+            prompt,
+            max_tokens=max_tokens,
+            max_attempts=max_attempts,
+            temperature=temperature,
+        )
+    return _send_gemini_completion(
+        prompt,
+        max_tokens=max_tokens,
+        max_attempts=max_attempts,
+        temperature=temperature,
+    )
 
 
 def test_ollama_connection(
@@ -641,6 +715,7 @@ def test_gemini_connection() -> dict[str, Any]:
         'Return this JSON only: {"status":"READY"}.',
         max_tokens=16,
         max_attempts=1,
+        temperature=0,
     )
     return {"ok": True, "provider": "gemini", "model": LLM_MODEL_NAME, "content": content}
 
@@ -658,7 +733,10 @@ def generate_single_question(
     difficulty: str = "medium",
     bloom_level: str = "apply",
     custom_prompt: str | None = None,
-    previous_questions: list[str] | None = None,
+    previous_questions: list[str | dict[str, str]] | None = None,
+    focus_chunk_id: str | None = None,
+    temperature: float = GENERATION_TEMPERATURE,
+    correction_message: str | None = None,
 ) -> dict[str, Any]:
     if question_type not in VALID_QUESTION_TYPES:
         raise ValueError(f"Unsupported question type: {question_type}")
@@ -678,13 +756,14 @@ def generate_single_question(
         context_docs,
         custom_prompt,
         previous_questions,
+        focus_chunk_id,
     )
-    retry_correction: str | None = None
+    retry_correction = correction_message
     for attempt in range(MAX_QUESTION_GENERATION_ATTEMPTS):
         response_prompt = prompt
         if retry_correction:
             response_prompt += f"\n\nCorrection required: {retry_correction}"
-        raw_response = _send_completion(response_prompt)
+        raw_response = _send_completion(response_prompt, temperature=temperature)
         try:
             parsed = _extract_json_object(raw_response)
         except json.JSONDecodeError as exc:
@@ -711,14 +790,26 @@ def generate_single_question(
             raise ValueError("Model response must explain the requested Bloom level")
         try:
             parsed["source_refs"] = _canonicalize_source_refs(parsed.get("source_refs"), context_docs)
-        except InvalidEvidenceQuoteError:
+            if focus_chunk_id and focus_chunk_id not in {
+                str(ref.get("chunk_id", "")) for ref in parsed["source_refs"]
+            }:
+                raise InvalidSourceRefError(
+                    f"Question must cite its focus chunk '{focus_chunk_id}'"
+                )
+        except InvalidSourceRefError as exc:
             if attempt + 1 == MAX_QUESTION_GENERATION_ATTEMPTS:
                 raise
-            retry_correction = (
-                "Your previous response cited an evidence_quote that was not copied exactly from its "
-                "curriculum chunk. Generate the question again and include only a short, verbatim quote "
-                "copied exactly from the matching chunk shown below. Do not paraphrase or change punctuation."
-            )
+            if isinstance(exc, InvalidEvidenceQuoteError):
+                retry_correction = (
+                    "Your previous response cited an evidence_quote that was not copied exactly from its "
+                    "curriculum chunk. Generate the question again and include only a short, verbatim quote "
+                    "copied exactly from the matching chunk shown below. Do not paraphrase or change punctuation."
+                )
+            else:
+                retry_correction = (
+                    f"Your previous response had an invalid source reference ({exc}). Cite a provided chunk "
+                    "with a useful verbatim evidence_quote."
+                )
             continue
         if question_type == "mcq":
             parsed["rubric"] = [
@@ -730,10 +821,10 @@ def generate_single_question(
             ]
             options = parsed.get("options") or []
             correct_key = str(parsed.get("correct_answer", "")).strip().upper()
-            if correct_key in "1234" and len(options) == 4:
+            if correct_key in {"1", "2", "3", "4"} and len(options) == 4:
                 correct_key = "ABCD"[int(correct_key) - 1]
                 parsed["correct_answer"] = correct_key
-            if correct_key in "ABCD" and len(options) == 4:
+            if correct_key in {"A", "B", "C", "D"} and len(options) == 4:
                 selected_text = re.sub(
                     r"^\s*[A-D1-4][\s.):\-]+", "", options["ABCD".index(correct_key)], flags=re.IGNORECASE
                 ).strip()
@@ -741,6 +832,81 @@ def generate_single_question(
         _validate_question(parsed)
         return parsed
     raise RuntimeError("Question generation ended without a result")
+
+
+def _question_tokens(text: str) -> set[str]:
+    return set(re.findall(r"\w+", text.casefold(), flags=re.UNICODE))
+
+
+def _jaccard_similarity(left: str, right: str) -> float:
+    left_tokens = _question_tokens(left)
+    right_tokens = _question_tokens(right)
+    union = left_tokens | right_tokens
+    return len(left_tokens & right_tokens) / len(union) if union else 0.0
+
+
+def _find_similar_previous_question(
+    new_question: dict[str, Any],
+    previous: list[dict[str, Any]],
+    threshold: float = 0.55,
+) -> dict[str, Any] | None:
+    new_text = str(new_question.get("question", ""))
+    new_with_answer = f"{new_text} {new_question.get('reference_answer', '')}"
+    for earlier in previous:
+        earlier_text = str(earlier.get("question", ""))
+        earlier_with_answer = f"{earlier_text} {earlier.get('reference_answer', '')}"
+        if (
+            _jaccard_similarity(new_text, earlier_text) >= threshold
+            or _jaccard_similarity(new_with_answer, earlier_with_answer) >= threshold
+        ):
+            return earlier
+    return None
+
+
+def _is_duplicate_question(
+    new_question: dict[str, Any],
+    previous: list[dict[str, Any]],
+    threshold: float = 0.55,
+) -> bool:
+    return _find_similar_previous_question(new_question, previous, threshold) is not None
+
+
+def _verify_mcq_answer(question: dict[str, Any], context_docs: list[Any]) -> bool:
+    context_sections = []
+    for doc in context_docs[:MAX_CONTEXT_CHUNKS]:
+        content = doc.page_content if hasattr(doc, "page_content") else str(doc)
+        if len(content) > MAX_CHUNK_CHARS:
+            chunk_id = (getattr(doc, "metadata", {}) or {}).get("chunk_id", "unknown")
+            logger.warning(
+                "Truncated curriculum chunk %s for MCQ verification from %d to %d characters",
+                chunk_id,
+                len(content),
+                MAX_CHUNK_CHARS,
+            )
+        context_sections.append(content[:MAX_CHUNK_CHARS])
+    context_text = "\n\n---\n\n".join(context_sections)
+    prompt = f"""
+Independently answer the curriculum-grounded multiple-choice question using only the context.
+Return valid JSON only with exactly these fields: {{"answer":"A|B|C|D","supported":true|false}}.
+Set supported to true only if the context supports the selected answer and does not support another option.
+
+Context:
+{context_text}
+
+Question:
+{question["question"]}
+
+Options:
+{json.dumps(question["options"], ensure_ascii=False)}
+""".strip()
+    response = _send_completion(prompt, temperature=0)
+    try:
+        result = _extract_json_object(response)
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.warning("MCQ answer verification response was invalid: %s", exc)
+        return False
+    answer = str(result.get("answer", "")).strip().upper()
+    return answer == question.get("correct_answer") and result.get("supported") is True
 
 
 def load_curriculum_store(
@@ -766,12 +932,27 @@ def retrieve_curriculum_context(
     topic: str,
     persist_dir: str | Path | None = None,
     collection_name: str = "curriculum",
-    k: int = 8,
+    k: int = MAX_CONTEXT_CHUNKS,
     embedding_model: str | None = None,
     lesson_id: str | None = None,
 ) -> list[Any]:
     store = load_curriculum_store(persist_dir=persist_dir, collection_name=collection_name, embedding_model=embedding_model)
-    docs = retrieve(store, query=topic, k=k, lesson_id=lesson_id)
+    requested_k = k
+    collection = getattr(store, "_collection", None)
+    if lesson_id is not None and collection is not None:
+        records = collection.get(
+            where={"lesson_id": str(lesson_id)},
+            include=["metadatas"],
+        )
+        metadata_records = records.get("metadatas") or []
+        chunk_ids = {
+            str(metadata["chunk_id"])
+            for metadata in metadata_records
+            if metadata and metadata.get("chunk_id")
+        }
+        if chunk_ids:
+            requested_k = min(k, len(chunk_ids))
+    docs = retrieve(store, query=topic, k=requested_k, lesson_id=lesson_id)
     if not docs:
         if lesson_id:
             raise ValueError(f"No curriculum chunks found for lesson '{lesson_id}' and topic '{topic}'")
@@ -829,6 +1010,11 @@ def validate_exam(exam: dict[str, Any]) -> None:
         raise ValueError("Exam must be an object containing a questions list")
     if not exam["questions"]:
         raise ValueError("Exam must contain at least one question")
+    if "warnings" in exam and (
+        not isinstance(exam["warnings"], list)
+        or any(not isinstance(warning, str) for warning in exam["warnings"])
+    ):
+        raise ValueError("Exam warnings must be a list of strings")
     question_count = exam.get("question_count")
     if (
         isinstance(question_count, bool)
@@ -900,7 +1086,10 @@ def generate_exam(
     output_dir: str | Path | None = None,
     context_docs: list[Any] | None = None,
     lesson_id: str | None = None,
+    allow_partial: bool = False,
+    verify_answers: bool = True,
 ) -> tuple[dict[str, Any], Path]:
+    """Generate and save a complete exam, optionally verifying each MCQ with one extra LLM call."""
     ok, missing, model_name = validate_configuration()
     if not ok:
         raise ValueError(f"Missing required config values: {', '.join(missing)}")
@@ -927,7 +1116,7 @@ def generate_exam(
             topic=topic,
             persist_dir=persist_dir,
             collection_name=collection_name,
-            k=8,
+            k=max(MAX_CONTEXT_CHUNKS, number_of_questions),
             lesson_id=lesson_id,
         )
     elif not context_docs:
@@ -941,25 +1130,122 @@ def generate_exam(
             raise ValueError(
                 f"Retrieved context contains chunks outside the selected lesson '{lesson_id}'"
             )
-        if not context_docs:
-            raise ValueError(f"No curriculum context available for selected lesson '{lesson_id}'")
 
-    questions: list[dict[str, Any]] = []
-    previous_questions: list[str] = []
-    for idx, q_type in enumerate(requested, start=1):
-        question = generate_single_question(
-            topic=topic,
-            question_type=q_type,
-            context_docs=context_docs,
-            difficulty=difficulty,
-            bloom_level=bloom_level,
-            previous_questions=previous_questions,
+    unique_context_docs: list[Any] = []
+    seen_chunk_ids: set[str] = set()
+    for doc in context_docs:
+        chunk_id = str((getattr(doc, "metadata", {}) or {}).get("chunk_id", "")).strip()
+        if not chunk_id:
+            continue
+        if chunk_id not in seen_chunk_ids:
+            unique_context_docs.append(doc)
+            seen_chunk_ids.add(chunk_id)
+    if not unique_context_docs:
+        raise ValueError("No curriculum chunks with unique chunk_ids are available for generation")
+
+    lesson_chunk_count = len(unique_context_docs)
+    retrieved_chunk_ids = sorted(seen_chunk_ids)
+    logger.info(
+        "Exam generation lesson_id=%s lesson_chunk_count=%d docs_retrieved=%d unique_chunk_ids=%d",
+        lesson_id,
+        lesson_chunk_count,
+        len(context_docs),
+        len(retrieved_chunk_ids),
+    )
+    warnings: list[str] = []
+    if lesson_chunk_count < number_of_questions:
+        warnings.append(
+            f"Only {lesson_chunk_count} unique curriculum chunks were available for "
+            f"{number_of_questions} requested questions."
         )
-        question["question_id"] = f"Q{idx:02d}"
-        question["lesson_id"] = lesson_id
-        _validate_question(question)
-        questions.append(question)
-        previous_questions.append(question["question"])
+    questions: list[dict[str, Any]] = []
+    previous_questions: list[dict[str, Any]] = []
+    for idx, q_type in enumerate(requested, start=1):
+        focus_doc = unique_context_docs[(idx - 1) % lesson_chunk_count]
+        focus_chunk_id = str(focus_doc.metadata["chunk_id"])
+        question_context = [focus_doc] + [
+            doc for doc in unique_context_docs if doc is not focus_doc
+        ][:3]
+        retry_correction: str | None = None
+        temperature = GENERATION_TEMPERATURE
+        for attempt in range(1, MAX_PER_QUESTION_RETRIES + 1):
+            similar_question: dict[str, Any] | None = None
+            try:
+                question = generate_single_question(
+                    topic=topic,
+                    question_type=q_type,
+                    context_docs=question_context,
+                    difficulty=difficulty,
+                    bloom_level=bloom_level,
+                    previous_questions=previous_questions,
+                    focus_chunk_id=focus_chunk_id,
+                    temperature=temperature,
+                    correction_message=retry_correction,
+                )
+                _validate_question(question)
+                similar_question = _find_similar_previous_question(question, previous_questions)
+                if similar_question:
+                    raise ValueError(
+                        f"Question duplicates earlier question: {similar_question['question']}"
+                    )
+                if q_type == "mcq" and verify_answers:
+                    if not _verify_mcq_answer(question, question_context):
+                        raise ValueError("MCQ answer failed independent verification")
+                    question["verified"] = True
+                question["question_id"] = f"Q{len(questions) + 1:02d}"
+                question["lesson_id"] = lesson_id
+                _validate_question(question)
+                questions.append(question)
+                previous_questions.append(
+                    {
+                        "question": question["question"],
+                        "reference_answer": question["reference_answer"][:150],
+                    }
+                )
+                cited_chunk_ids = [
+                    ref["chunk_id"] for ref in question.get("source_refs", [])
+                ]
+                logger.info(
+                    "Generated question index=%d type=%s chunk_ids=%s question=%s",
+                    len(questions),
+                    q_type,
+                    cited_chunk_ids,
+                    question["question"][:80],
+                )
+                break
+            except LLMProviderError:
+                raise
+            except ConnectionError:
+                raise
+            except ValueError as exc:
+                if similar_question:
+                    retry_correction = (
+                        f"The candidate was too similar to this earlier question: "
+                        f"{similar_question['question']!r}. Demand a different fact, rule, or example "
+                        "from the focus chunk."
+                    )
+                    temperature = min(0.9, temperature + 0.2)
+                else:
+                    retry_correction = (
+                        f"The previous attempt failed validation: {exc}. Generate a valid, "
+                        "curriculum-supported question with valid source references."
+                    )
+                if attempt == MAX_PER_QUESTION_RETRIES:
+                    if allow_partial:
+                        warnings.append(
+                            f"Question Q{idx:02d} was skipped after {MAX_PER_QUESTION_RETRIES} "
+                            f"attempts: {exc}"
+                        )
+                        logger.warning("Skipping failed question Q%02d: %s", idx, exc)
+                        break
+                    raise ValueError(
+                        f"Q{idx:02d} failed after {MAX_PER_QUESTION_RETRIES} attempts: {exc}"
+                    ) from exc
+        else:
+            raise RuntimeError(f"Question generation retry loop ended unexpectedly for Q{idx:02d}")
+
+    if not questions:
+        raise ValueError("All questions failed generation; no exam was saved.")
 
     exam = {
         "exam_title": f"{topic.title()} Assessment",
@@ -980,6 +1266,7 @@ def generate_exam(
         "difficulty": difficulty,
         "bloom_level": bloom_level,
         "questions": questions,
+        "warnings": warnings,
     }
 
     validate_exam(exam)

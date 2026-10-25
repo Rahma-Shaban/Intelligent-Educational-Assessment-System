@@ -14,6 +14,7 @@ langchain-ollama
 
 # Web backend
 fastapi
+email-validator
 uvicorn[standard]
 sqlalchemy
 python-jose[cryptography]

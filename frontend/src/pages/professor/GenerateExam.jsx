@@ -7,6 +7,10 @@ import Badge from '../../components/ui/Badge';
 import Alert from '../../components/ui/Alert';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import {
+  assertRequestedQuestionCount,
+  buildExamPayload,
+} from './examGeneration';
+import {
   Sparkles,
   BookOpen,
   CheckSquare,
@@ -40,8 +44,28 @@ const GenerateExam = () => {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const [generatedExam, setGeneratedExam] = useState(null);
+  const [lastRequestedCount, setLastRequestedCount] = useState(null);
 
   const navigate = useNavigate();
+  const selectedLessonDetails = lessons.find(
+    (lesson) => String(lesson.lesson_id || lesson.id) === String(selectedLesson)
+  );
+  const lessonChunkCount = Number.isInteger(selectedLessonDetails?.chunk_count)
+    ? selectedLessonDetails.chunk_count
+    : null;
+  const requestedQuestionCount = Number.parseInt(numQuestions, 10) || 3;
+  const generatedQuestions = generatedExam?.questions || [];
+  const uniqueQuestionCount = new Set(
+    generatedQuestions
+      .map((question) => question.question?.trim().toLowerCase())
+      .filter(Boolean)
+  ).size;
+  const uniqueCitedChunkCount = new Set(
+    generatedQuestions.flatMap((question) =>
+      (question.source_refs || []).map((sourceRef) => sourceRef.chunk_id).filter(Boolean)
+    )
+  ).size;
+  const generationWarnings = generatedExam?.warnings || [];
 
   useEffect(() => {
     const fetchLessons = async () => {
@@ -91,27 +115,31 @@ const GenerateExam = () => {
 
     setGenerating(true);
     setGeneratedExam(null);
+    setLastRequestedCount(null);
 
-    const payload = {
-      title: title.trim() || undefined,
-      lesson_id: selectedLesson,
-      lesson: selectedLesson,
-      topic: topic.trim() || undefined,
+    const requestCount = Number.parseInt(numQuestions, 10) || 3;
+    const payload = buildExamPayload({
+      title,
+      selectedLesson,
+      topic,
       difficulty,
-      bloom_level: bloomLevel,
-      question_types: activeTypes,
-      num_questions: parseInt(numQuestions, 10) || 3,
-    };
+      bloomLevel,
+      questionTypes: activeTypes,
+      numQuestions,
+    });
 
     try {
       const response = await generateExam(payload);
+      assertRequestedQuestionCount(response, requestCount);
       setGeneratedExam(response);
+      setLastRequestedCount(requestCount);
     } catch (err) {
       console.error('Exam generation failed:', err);
       const detail =
         err.response?.data?.detail ||
         err.response?.data?.message ||
-        'Exam generation failed. Check that the curriculum is indexed and Gemini API keys are configured.';
+        err.message ||
+        'Exam generation failed. Check that the curriculum is indexed and the selected LLM provider is configured.';
       setError(typeof detail === 'string' ? detail : JSON.stringify(detail));
     } finally {
       setGenerating(false);
@@ -242,17 +270,28 @@ const GenerateExam = () => {
             {/* Number of Questions */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
-                Number of Questions (1 - 20)
+                Number of Questions (1 - 25)
               </label>
               <input
                 type="number"
                 min="1"
-                max="20"
+                max="25"
                 value={numQuestions}
                 onChange={(e) => setNumQuestions(e.target.value)}
                 className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-colors"
                 required
               />
+              <p className="text-xs text-gray-500 mt-1.5">
+                {lessonChunkCount === null
+                  ? 'Lesson chunk count is unavailable.'
+                  : `${lessonChunkCount} curriculum chunks available for this lesson.`}
+              </p>
+              {lessonChunkCount !== null && requestedQuestionCount > lessonChunkCount && (
+                <p className="text-xs text-amber-700 mt-1" role="alert">
+                  You requested {requestedQuestionCount} questions, but this lesson has only{' '}
+                  {lessonChunkCount} unique chunks. Some questions may need to focus on the same chunk.
+                </p>
+              )}
             </div>
 
             {/* Question Types checkboxes */}
@@ -332,8 +371,7 @@ const GenerateExam = () => {
                   Exam Generated Successfully!
                 </h3>
                 <p className="text-xs text-emerald-700">
-                  Total Questions:{' '}
-                  {generatedExam.questions?.length || generatedExam.num_questions || 'N/A'}{' '}
+                  Requested: {lastRequestedCount} &bull; Generated: {generatedQuestions.length}{' '}
                   &bull; Total Points: {generatedExam.total_points || 'Calculated'}
                 </p>
               </div>
@@ -354,6 +392,20 @@ const GenerateExam = () => {
             </div>
           </div>
 
+          <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
+            <p>
+              Unique question texts: {uniqueQuestionCount} &bull; Unique cited chunk IDs:{' '}
+              {uniqueCitedChunkCount}
+            </p>
+            {generationWarnings.length > 0 && (
+              <ul className="mt-2 list-disc pl-5 text-amber-800" role="status">
+                {generationWarnings.map((warning, index) => (
+                  <li key={`${index}-${warning}`}>{warning}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           {/* Render Question Previews */}
           <div className="space-y-4">
             <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -361,7 +413,7 @@ const GenerateExam = () => {
               Generated Questions Preview
             </h3>
 
-            {(generatedExam.questions || []).map((q, idx) => (
+            {generatedQuestions.map((q, idx) => (
               <Card key={idx} className="p-6 space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
                   <div className="flex items-center gap-2">
