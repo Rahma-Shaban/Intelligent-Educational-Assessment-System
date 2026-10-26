@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,14 +26,22 @@ from typing import Any, Iterable
 from scripts.config import (
     BASE_DIR,
     GEMINI_API_KEY,
+    GEMINI_MODEL_NAME,
+    GROQ_API_KEY,
+    GROQ_BASE_URL,
+    GROQ_MODEL_NAME,
     HF_EMBEDDING_MODEL_NAME,
+    LLM_FALLBACK_PROVIDERS,
+    LLM_MIN_INTERVAL_SECONDS,
     LLM_MODEL_NAME,
     LLM_PROVIDER,
+    MAX_PER_QUESTION_RETRIES as CONFIG_MAX_RETRIES,
     OLLAMA_BASE_URL,
     OLLAMA_MODEL_NAME,
     OLLAMA_NUM_CTX,
     OUTPUTS_DIR,
     VECTOR_DB_PATH,
+    VERIFY_MCQ_ANSWERS,
 )
 from scripts.ingestion import get_embeddings, load_vectorstore, retrieve
 
@@ -53,10 +62,92 @@ MAX_COMPLETION_ATTEMPTS = 2
 MAX_COMPLETION_TOKENS = 4096
 RETRY_COMPLETION_TOKENS = 8192
 MAX_QUESTION_GENERATION_ATTEMPTS = 2
-MAX_PER_QUESTION_RETRIES = 3
-
+MAX_PER_QUESTION_RETRIES = int(CONFIG_MAX_RETRIES or 3)
+MAX_429_RETRIES = 3
+MAX_BACKOFF_WAIT_SECONDS = 60.0
 
 logger = logging.getLogger(__name__)
+
+_LAST_LLM_CALL_TIMESTAMP: float = 0.0
+_LLM_CALL_COUNTER: int = 0
+_LAST_USED_METADATA: dict[str, str] = {"provider": "", "model": ""}
+
+
+def get_llm_call_count() -> int:
+    """Return total number of LLM API requests made during this session."""
+    return _LLM_CALL_COUNTER
+
+
+def reset_llm_call_count() -> int:
+    """Reset LLM API request counter and return previous count."""
+    global _LLM_CALL_COUNTER
+    old = _LLM_CALL_COUNTER
+    _LLM_CALL_COUNTER = 0
+    return old
+
+
+def get_last_llm_metadata() -> dict[str, str]:
+    """Return metadata (provider, model) of the most recently executed completion."""
+    return dict(_LAST_USED_METADATA)
+
+
+def _increment_llm_call_count() -> None:
+    global _LLM_CALL_COUNTER
+    _LLM_CALL_COUNTER += 1
+
+
+def _gemini_model() -> str:
+    """Return a Gemini model ID even when another provider is primary.
+
+    LLM_MODEL_NAME holds the primary provider's model (e.g. a Groq ID), so it is only
+    reused for Gemini when it is actually a Gemini model.
+    """
+    if LLM_MODEL_NAME and str(LLM_MODEL_NAME).lower().startswith("gemini"):
+        return LLM_MODEL_NAME
+    return GEMINI_MODEL_NAME or "gemini-2.5-flash"
+
+
+def _throttle_client() -> None:
+    """Pause execution if necessary to respect LLM_MIN_INTERVAL_SECONDS."""
+    global _LAST_LLM_CALL_TIMESTAMP
+    min_interval = float(LLM_MIN_INTERVAL_SECONDS or 0.0)
+    if min_interval > 0.0:
+        elapsed = time.monotonic() - _LAST_LLM_CALL_TIMESTAMP
+        if elapsed < min_interval:
+            time.sleep(min_interval - elapsed)
+    _LAST_LLM_CALL_TIMESTAMP = time.monotonic()
+
+
+def _parse_retry_after(headers: Any) -> float:
+    """Extract wait time in seconds from Retry-After or x-ratelimit headers."""
+    if not hasattr(headers, "get"):
+        return 2.0
+    val = headers.get("retry-after")
+    if val:
+        try:
+            return max(0.5, float(val))
+        except (ValueError, TypeError):
+            pass
+    for h in ("x-ratelimit-reset-requests", "x-ratelimit-reset-tokens"):
+        raw = headers.get(h)
+        if not raw:
+            continue
+        raw_str = str(raw).strip().lower()
+        try:
+            if raw_str.endswith("ms"):
+                return max(0.2, float(raw_str[:-2]) / 1000.0)
+            if raw_str.endswith("s") and "m" not in raw_str:
+                return max(0.5, float(raw_str[:-1]))
+            if "m" in raw_str and raw_str.endswith("s"):
+                parts = raw_str.split("m")
+                mins = float(parts[0])
+                secs = float(parts[1][:-1]) if parts[1].endswith("s") else 0.0
+                return max(1.0, mins * 60 + secs)
+            return max(1.0, float(raw_str))
+        except (ValueError, TypeError):
+            continue
+    return 2.0
+
 
 
 class LLMProviderError(ValueError):
@@ -87,18 +178,22 @@ def resolve_vectorstore_dir(persist_dir: str | Path | None = None) -> Path:
 def validate_configuration() -> tuple[bool, list[str], str | None]:
     """Validate environment and loaded config without exposing secrets."""
     missing: list[str] = []
-    if LLM_PROVIDER not in {"gemini", "ollama"}:
-        missing.append("LLM_PROVIDER must be 'gemini' or 'ollama'")
+    if LLM_PROVIDER not in {"gemini", "ollama", "groq"}:
+        missing.append("LLM_PROVIDER must be 'gemini', 'ollama', or 'groq'")
     if LLM_PROVIDER == "gemini":
         if not GEMINI_API_KEY:
             missing.append("GEMINI_API_KEY")
-        if not LLM_MODEL_NAME:
-            missing.append("LLM_MODEL_NAME")
-        model = LLM_MODEL_NAME
+        model = _gemini_model()
     elif LLM_PROVIDER == "ollama":
         model = OLLAMA_MODEL_NAME or (LLM_MODEL_NAME if LLM_MODEL_NAME and not LLM_MODEL_NAME.startswith("gemini") else None) or "llama3.2"
         if not model:
             missing.append("OLLAMA_MODEL_NAME or LLM_MODEL_NAME")
+    elif LLM_PROVIDER == "groq":
+        if not GROQ_API_KEY:
+            missing.append("GROQ_API_KEY")
+        model = GROQ_MODEL_NAME or LLM_MODEL_NAME or "openai/gpt-oss-20b"
+        if not model:
+            missing.append("GROQ_MODEL_NAME or LLM_MODEL_NAME")
     else:
         model = LLM_MODEL_NAME
     return (not missing, missing, model)
@@ -205,8 +300,32 @@ def _validate_question(question: dict[str, Any]) -> None:
             or any(not isinstance(option, str) or not option.strip() for option in options)
         ):
             raise ValueError("MCQs require exactly four options")
+
+        cleaned_options = [
+            re.sub(r"^\s*[A-D1-4][\s.):\-]+", "", str(opt)).strip()
+            for opt in options
+        ]
+        if (
+            len(cleaned_options) == 4
+            and all(cleaned_options)
+            and len({opt.casefold() for opt in cleaned_options}) == 4
+        ):
+            options = cleaned_options
+            question["options"] = cleaned_options
+
         if len({option.strip().casefold() for option in options}) != 4:
             raise ValueError("MCQ options must be distinct")
+
+        for option in options:
+            norm_opt = option.strip().casefold()
+            if norm_opt in {
+                "all of the above", "none of the above",
+                "both a and b", "both b and c", "both a and c",
+                "neither a nor b", "all the above", "none the above",
+                "all of these", "none of these",
+            }:
+                raise ValueError(f"MCQ contains prohibited low-quality distractor: '{option}'")
+
         if "correct_answer" not in question:
             raise ValueError("MCQ missing correct_answer")
         correct = str(question["correct_answer"]).strip().upper()
@@ -228,14 +347,16 @@ def _validate_question(question: dict[str, Any]) -> None:
                 raise ValueError("MCQ reference_answer does not match correct_answer")
             answer_text = reference_match.group(2)
             if answer_text:
-                selected_option = re.sub(
+                clean_ref_text = re.sub(
                     r"^\s*[A-D1-4][\s.):\-]+",
                     "",
-                    options["ABCD".index(question["correct_answer"])],
+                    answer_text,
                     flags=re.IGNORECASE,
-                )
-                if " ".join(answer_text.split()).casefold() != " ".join(selected_option.split()).casefold():
+                ).strip()
+                selected_option = options["ABCD".index(question["correct_answer"])]
+                if " ".join(clean_ref_text.split()).casefold() != " ".join(selected_option.split()).casefold():
                     raise ValueError("MCQ reference_answer text does not match the selected option")
+                question["reference_answer"] = f"{question['correct_answer']}: {selected_option}"
         rubric = question.get("rubric")
         if (
             not isinstance(rubric, list)
@@ -292,18 +413,32 @@ def _build_prompt(
     custom_prompt: str | None = None,
     previous_questions: list[str | dict[str, str]] | None = None,
     focus_chunk_id: str | None = None,
+    language: str = "en",
 ) -> str:
     context_sections = []
-    for doc in context_docs[:MAX_CONTEXT_CHUNKS]:
+    ordered_docs = list(context_docs[:MAX_CONTEXT_CHUNKS])
+    if focus_chunk_id:
+        focus_docs = [
+            d for d in ordered_docs
+            if str((getattr(d, "metadata", {}) or {}).get("chunk_id")) == str(focus_chunk_id)
+        ]
+        other_docs = [
+            d for d in ordered_docs
+            if str((getattr(d, "metadata", {}) or {}).get("chunk_id")) != str(focus_chunk_id)
+        ]
+        ordered_docs = focus_docs + other_docs[:3]
+
+    for d_idx, doc in enumerate(ordered_docs):
         full_content = doc.page_content if hasattr(doc, "page_content") else str(doc)
-        content = full_content[:MAX_CHUNK_CHARS]
-        if len(full_content) > MAX_CHUNK_CHARS:
+        chunk_budget = MAX_CHUNK_CHARS if d_idx == 0 else min(MAX_CHUNK_CHARS, 1500)
+        content = full_content[:chunk_budget]
+        if len(full_content) > chunk_budget:
             chunk_id = (getattr(doc, "metadata", {}) or {}).get("chunk_id", "unknown")
             logger.warning(
                 "Truncated curriculum chunk %s from %d to %d characters",
                 chunk_id,
                 len(full_content),
-                MAX_CHUNK_CHARS,
+                chunk_budget,
             )
         references = _build_source_refs([doc])
         context_sections.append(
@@ -328,6 +463,9 @@ def _build_prompt(
             "Generate one multiple-choice question with exactly four distinct options, exactly one correct answer, "
             "a brief reference answer, a one-paragraph explanation, and a single-criterion rubric worth exactly 1 point "
             "(correct selected option = 1, otherwise = 0). Do not split one selected-answer question across overlapping criteria. "
+            "Options must be clean text without option prefixes (do NOT include 'A)' or '1.' in the option strings). "
+            "Distractors must be plausible, realistic curriculum concepts from the focus lesson that are clearly incorrect. "
+            "Do NOT use 'All of the above', 'None of the above', or trivial non-options. "
             f"{MCQ_GROUNDING_RULE}"
         )
     elif question_type == "short_answer":
@@ -358,6 +496,15 @@ def _build_prompt(
             for index in range(1, criterion_count + 1)
         ]
     max_score_example = sum(item["points"] for item in rubric_example)
+
+    lang_instruction = ""
+    if language and str(language).lower() in {"ar", "arabic"}:
+        lang_instruction = (
+            "\nLanguage Requirement:\n"
+            "Generate the question text, options, explanation, bloom_rationale, and rubric descriptions in Arabic.\n"
+            "CRITICAL EXCEPTION: Every evidence_quote in source_refs MUST be copied verbatim in its original English "
+            "text directly from the curriculum chunk without translation or modification.\n"
+        )
 
     return f"""
 You are generating a curriculum-aligned exam question.
@@ -399,7 +546,7 @@ For MCQs, reference_answer must be "correct letter: exact option text". For shor
 For apply-level MCQs: {MCQ_GROUNDING_RULE} For other apply-level questions, use a new scenario rather than asking the student to repeat a table entry. For remember/understand, test recall or explanation; for analyze/evaluate/create, require comparison, judgment, or production appropriate to the selected level. Explain the cognitive task in bloom_rationale so the teacher can review the classification.
 Do NOT test any fact already covered by the previously generated questions. Pick a different fact, rule, or example from the focus chunk.
 {f"The question MUST test the facts in the chunk with this chunk_id: {focus_chunk_id}. The first listed context chunk is that chunk." if focus_chunk_id else ""}
-
+{lang_instruction}
 Previously generated questions to avoid repeating:
 {json.dumps(covered_questions, ensure_ascii=False)}
 
@@ -484,8 +631,7 @@ def _send_gemini_completion(
 ) -> str:
     if not GEMINI_API_KEY:
         raise LLMProviderError("GEMINI_API_KEY is missing from the current project configuration")
-    if not LLM_MODEL_NAME:
-        raise LLMProviderError("LLM_MODEL_NAME is missing from the current project configuration")
+    gemini_model = _gemini_model()
 
     from google import genai
     from google.genai import errors, types
@@ -495,15 +641,20 @@ def _send_gemini_completion(
     try:
         for attempt in range(max_attempts):
             output_budget = max_tokens if attempt == 0 else RETRY_COMPLETION_TOKENS
+            _throttle_client()
+            _increment_llm_call_count()
+            config_kwargs: dict[str, Any] = {
+                "temperature": temperature,
+                "max_output_tokens": output_budget,
+                "response_mime_type": "application/json",
+            }
+            if output_budget <= 64:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
             try:
                 response = client.models.generate_content(
-                    model=LLM_MODEL_NAME,
+                    model=gemini_model,
                     contents=prompt,
-                    config=types.GenerateContentConfig(
-                        temperature=temperature,
-                        max_output_tokens=output_budget,
-                        response_mime_type="application/json",
-                    ),
+                    config=types.GenerateContentConfig(**config_kwargs),
                 )
             except errors.APIError as exc:
                 status = exc.code
@@ -514,7 +665,7 @@ def _send_gemini_completion(
                     ) from exc
                 if status in {400, 404}:
                     raise LLMProviderError(
-                        f"Gemini model '{LLM_MODEL_NAME}' is unavailable or the request is "
+                        f"Gemini model '{gemini_model}' is unavailable or the request is "
                         f"unsupported (HTTP {status}). Check the model name and API access."
                     ) from exc
                 if status == 429:
@@ -602,6 +753,8 @@ def _send_ollama_completion(
                 num_ctx=num_ctx,
                 num_predict=max_tokens,
             )
+            _throttle_client()
+            _increment_llm_call_count()
             response = llm.invoke(prompt)
             content = getattr(response, "content", "")
             if isinstance(content, list):
@@ -646,6 +799,157 @@ def _send_ollama_completion(
     )
 
 
+def _send_groq_completion(
+    prompt: str,
+    *,
+    max_tokens: int = MAX_COMPLETION_TOKENS,
+    max_attempts: int = MAX_COMPLETION_ATTEMPTS,
+    temperature: float = GENERATION_TEMPERATURE,
+) -> str:
+    if not GROQ_API_KEY:
+        raise LLMProviderError("GROQ_API_KEY is missing from the current project configuration")
+    model = GROQ_MODEL_NAME or LLM_MODEL_NAME or "openai/gpt-oss-20b"
+    base_url = (GROQ_BASE_URL or "https://api.groq.com/openai/v1").rstrip("/")
+
+    import httpx
+
+    empty_response_details: list[str] = []
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    with httpx.Client(timeout=60.0) as client:
+        rate_limit_attempt = 0
+        for attempt in range(max_attempts):
+            output_budget = max_tokens if attempt == 0 else RETRY_COMPLETION_TOKENS
+            payload = {
+                "model": model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are a helpful educational assessment assistant that outputs valid JSON only.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": temperature,
+                "max_completion_tokens": output_budget,
+            }
+            while True:
+                _throttle_client()
+                _increment_llm_call_count()
+                try:
+                    response = client.post(
+                        f"{base_url}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                    )
+                except Exception as exc:
+                    sanitized_exc = str(exc).replace(GROQ_API_KEY, "[REDACTED]")
+                    if attempt + 1 == max_attempts:
+                        raise LLMProviderError(f"Groq network or connection error: {sanitized_exc}") from exc
+                    empty_response_details.append(f"connection error ({sanitized_exc})")
+                    break
+
+                status = response.status_code
+                if status == 429:
+                    err_msg = response.text.replace(GROQ_API_KEY, "[REDACTED]")
+                    wait_sec = min(_parse_retry_after(response.headers), MAX_BACKOFF_WAIT_SECONDS)
+                    if rate_limit_attempt < MAX_429_RETRIES and wait_sec <= MAX_BACKOFF_WAIT_SECONDS:
+                        logger.warning(
+                            "Groq rate limit hit (HTTP 429). Backing off for %.2f seconds (attempt %d/%d)...",
+                            wait_sec,
+                            rate_limit_attempt + 1,
+                            MAX_429_RETRIES,
+                        )
+                        time.sleep(wait_sec)
+                        rate_limit_attempt += 1
+                        continue
+                    raise LLMProviderError(
+                        f"Groq quota or rate limit exceeded, retry in {wait_sec:.1f} seconds. Details: {err_msg}"
+                    )
+                break
+
+            if status in {401, 403}:
+                raise LLMProviderError(
+                    "Groq API authentication or permission failed. Verify GROQ_API_KEY "
+                    "in your environment."
+                )
+            if status in {400, 404}:
+                err_msg = response.text.replace(GROQ_API_KEY, "[REDACTED]")
+                raise LLMProviderError(
+                    f"Groq model '{model}' is unavailable or the request is unsupported (HTTP {status}): {err_msg}"
+                )
+            if status >= 500:
+                raise LLMProviderError(f"Groq API server error (HTTP {status}); retry later.")
+            if status != 200:
+                err_msg = response.text.replace(GROQ_API_KEY, "[REDACTED]")
+                raise ValueError(f"Groq API request failed (HTTP {status}): {err_msg}")
+
+            try:
+                data = response.json()
+            except Exception as exc:
+                if attempt + 1 == max_attempts:
+                    raise ValueError("Groq returned non-JSON response payload") from exc
+                empty_response_details.append("invalid JSON response payload")
+                continue
+
+            choices = data.get("choices") or []
+            if not choices:
+                empty_response_details.append("no choices returned")
+                continue
+
+            choice = choices[0]
+            finish_reason = str(choice.get("finish_reason", "")).lower()
+            if finish_reason in {"length", "max_tokens"}:
+                if attempt + 1 == max_attempts:
+                    raise ValueError(
+                        f"Groq response stopped with MAX_TOKENS after {max_attempts} attempt(s); "
+                        "increase the output token budget or shorten the prompt."
+                    )
+                empty_response_details.append("response stopped with MAX_TOKENS")
+                continue
+
+            content = choice.get("message", {}).get("content", "")
+            if isinstance(content, str) and content.strip():
+                return content
+            empty_response_details.append("model returned empty content")
+
+    details = ", ".join(empty_response_details)
+    retry_guidance = (
+        f" The retry used an {RETRY_COMPLETION_TOKENS}-token output budget."
+        if max_attempts > 1
+        else " No retry was attempted."
+    )
+    raise ValueError(
+        f"Groq returned empty assistant content after {max_attempts} attempts "
+        f"({details}).{retry_guidance} Verify the model supports JSON content generation."
+    )
+
+
+def _invoke_provider_completion(
+    provider: str,
+    prompt: str,
+    *,
+    max_tokens: int,
+    max_attempts: int,
+    temperature: float,
+) -> tuple[str, str, str]:
+    if provider == "ollama":
+        model = OLLAMA_MODEL_NAME or (LLM_MODEL_NAME if LLM_MODEL_NAME and not LLM_MODEL_NAME.startswith("gemini") else None) or "llama3.2"
+        content = _send_ollama_completion(prompt, max_tokens=max_tokens, max_attempts=max_attempts, temperature=temperature)
+    elif provider == "groq":
+        model = GROQ_MODEL_NAME or LLM_MODEL_NAME or "openai/gpt-oss-20b"
+        content = _send_groq_completion(prompt, max_tokens=max_tokens, max_attempts=max_attempts, temperature=temperature)
+    elif provider == "gemini":
+        model = _gemini_model()
+        content = _send_gemini_completion(prompt, max_tokens=max_tokens, max_attempts=max_attempts, temperature=temperature)
+    else:
+        raise ValueError(f"Unsupported provider: {provider}")
+    return content, provider, model
+
+
 def _send_completion(
     prompt: str,
     *,
@@ -653,24 +957,39 @@ def _send_completion(
     max_attempts: int = MAX_COMPLETION_ATTEMPTS,
     temperature: float = GENERATION_TEMPERATURE,
 ) -> str:
-    if LLM_PROVIDER not in {"gemini", "ollama"}:
-        raise ValueError("LLM_PROVIDER must be 'gemini' or 'ollama'")
+    global _LAST_USED_METADATA
+    if LLM_PROVIDER not in {"gemini", "ollama", "groq"}:
+        raise ValueError("LLM_PROVIDER must be 'gemini', 'ollama', or 'groq'")
     if max_tokens < 1 or max_attempts < 1:
         raise ValueError("max_tokens and max_attempts must be positive")
 
-    if LLM_PROVIDER == "ollama":
-        return _send_ollama_completion(
-            prompt,
-            max_tokens=max_tokens,
-            max_attempts=max_attempts,
-            temperature=temperature,
-        )
-    return _send_gemini_completion(
-        prompt,
-        max_tokens=max_tokens,
-        max_attempts=max_attempts,
-        temperature=temperature,
-    )
+    providers = [LLM_PROVIDER]
+    for fb in LLM_FALLBACK_PROVIDERS:
+        if fb in {"gemini", "ollama", "groq"} and fb not in providers:
+            providers.append(fb)
+
+    last_exc: Exception | None = None
+    for idx, prov in enumerate(providers):
+        try:
+            content, used_prov, used_model = _invoke_provider_completion(
+                prov,
+                prompt,
+                max_tokens=max_tokens,
+                max_attempts=max_attempts,
+                temperature=temperature,
+            )
+            _LAST_USED_METADATA = {"provider": used_prov, "model": used_model}
+            return content
+        except Exception as exc:
+            err_text = str(exc).lower()
+            is_auth_error = any(w in err_text for w in ("authentication", "permission", "api_key", "401", "403"))
+            if is_auth_error or idx + 1 == len(providers):
+                raise
+            logger.warning("Provider '%s' encountered error: %s. Falling back to '%s'...", prov, exc, providers[idx + 1])
+            last_exc = exc
+    if last_exc:
+        raise last_exc
+    raise ValueError("No LLM provider available")
 
 
 def test_ollama_connection(
@@ -717,13 +1036,27 @@ def test_gemini_connection() -> dict[str, Any]:
         max_attempts=1,
         temperature=0,
     )
-    return {"ok": True, "provider": "gemini", "model": LLM_MODEL_NAME, "content": content}
+    return {"ok": True, "provider": "gemini", "model": _gemini_model(), "content": content}
+
+
+def test_groq_connection(model: str | None = None) -> dict[str, Any]:
+    """Make exactly one minimal request to check Groq model access."""
+    target_model = model or GROQ_MODEL_NAME or LLM_MODEL_NAME or "openai/gpt-oss-120b"
+    content = _send_groq_completion(
+        'Return this JSON object only: {"status":"READY"}.',
+        max_tokens=64,
+        max_attempts=1,
+        temperature=0,
+    )
+    return {"ok": True, "provider": "groq", "model": target_model, "content": content}
 
 
 def test_llm_connection() -> dict[str, Any]:
     """Check connectivity to whichever LLM provider is active."""
     if LLM_PROVIDER == "ollama":
         return test_ollama_connection()
+    elif LLM_PROVIDER == "groq":
+        return test_groq_connection()
     return test_gemini_connection()
 
 def generate_single_question(
@@ -737,6 +1070,7 @@ def generate_single_question(
     focus_chunk_id: str | None = None,
     temperature: float = GENERATION_TEMPERATURE,
     correction_message: str | None = None,
+    language: str = "en",
 ) -> dict[str, Any]:
     if question_type not in VALID_QUESTION_TYPES:
         raise ValueError(f"Unsupported question type: {question_type}")
@@ -757,6 +1091,7 @@ def generate_single_question(
         custom_prompt,
         previous_questions,
         focus_chunk_id,
+        language=language,
     )
     retry_correction = correction_message
     for attempt in range(MAX_QUESTION_GENERATION_ATTEMPTS):
@@ -780,14 +1115,35 @@ def generate_single_question(
                 "Do not include markdown fences, comments, trailing commas, or text before or after the JSON."
             )
             continue
-        if str(parsed.get("question_type", "")).strip().lower() != question_type:
-            raise ValueError("Model returned a question type different from the requested type")
-        if str(parsed.get("difficulty", "")).strip().lower() != difficulty:
-            raise ValueError("Model returned a difficulty different from the requested difficulty")
-        if str(parsed.get("bloom_level", "")).strip().lower() != bloom_level:
-            raise ValueError("Model returned a Bloom level different from the requested level")
+        actual_qtype = str(parsed.get("question_type", "")).strip().lower()
+        if actual_qtype != question_type:
+            if attempt + 1 == MAX_QUESTION_GENERATION_ATTEMPTS:
+                raise ValueError("Model returned a question type different from the requested type")
+            retry_correction = f"Your previous response had question_type='{actual_qtype}'. You MUST generate a '{question_type}' question."
+            continue
+
+        actual_diff = str(parsed.get("difficulty", "")).strip().lower()
+        if actual_diff != difficulty:
+            if attempt + 1 == MAX_QUESTION_GENERATION_ATTEMPTS:
+                parsed["difficulty"] = difficulty
+            else:
+                retry_correction = f"Your previous response had difficulty='{actual_diff}'. You MUST generate a '{difficulty}' difficulty question."
+                continue
+
+        actual_bloom = str(parsed.get("bloom_level", "")).strip().lower()
+        if actual_bloom != bloom_level:
+            if attempt + 1 == MAX_QUESTION_GENERATION_ATTEMPTS:
+                parsed["bloom_level"] = bloom_level
+            else:
+                retry_correction = f"Your previous response had bloom_level='{actual_bloom}'. You MUST generate a '{bloom_level}'-level question."
+                continue
+
         if not isinstance(parsed.get("bloom_rationale"), str) or not parsed["bloom_rationale"].strip():
-            raise ValueError("Model response must explain the requested Bloom level")
+            if attempt + 1 == MAX_QUESTION_GENERATION_ATTEMPTS:
+                raise ValueError("Model response must explain the requested Bloom level")
+            retry_correction = "You must provide a non-empty 'bloom_rationale' explaining the cognitive task."
+            continue
+
         try:
             parsed["source_refs"] = _canonicalize_source_refs(parsed.get("source_refs"), context_docs)
             if focus_chunk_id and focus_chunk_id not in {
@@ -819,23 +1175,63 @@ def generate_single_question(
                     "description": "Correct option = 1 point; incorrect or unanswered = 0 points.",
                 }
             ]
+            parsed["max_score"] = 1
             options = parsed.get("options") or []
             correct_key = str(parsed.get("correct_answer", "")).strip().upper()
             if correct_key in {"1", "2", "3", "4"} and len(options) == 4:
                 correct_key = "ABCD"[int(correct_key) - 1]
                 parsed["correct_answer"] = correct_key
             if correct_key in {"A", "B", "C", "D"} and len(options) == 4:
-                selected_text = re.sub(
-                    r"^\s*[A-D1-4][\s.):\-]+", "", options["ABCD".index(correct_key)], flags=re.IGNORECASE
-                ).strip()
+                cleaned_options = [
+                    re.sub(r"^\s*[A-D1-4][\s.):\-]+", "", str(opt)).strip()
+                    for opt in options
+                ]
+                if (
+                    len(cleaned_options) == 4
+                    and all(cleaned_options)
+                    and len({opt.casefold() for opt in cleaned_options}) == 4
+                ):
+                    options = cleaned_options
+                    parsed["options"] = cleaned_options
+
+                selected_text = options["ABCD".index(correct_key)].strip()
                 parsed["reference_answer"] = f"{correct_key}: {selected_text}"
+        else:
+            rubric = parsed.get("rubric")
+            if isinstance(rubric, list) and rubric:
+                rubric_sum = sum(item.get("points", 0) for item in rubric if isinstance(item, dict))
+                if rubric_sum > 0:
+                    parsed["max_score"] = rubric_sum
+
+        meta = get_last_llm_metadata()
+        if meta.get("provider"):
+            parsed["provider"] = meta["provider"]
+        if meta.get("model"):
+            parsed["model"] = meta["model"]
         _validate_question(parsed)
         return parsed
     raise RuntimeError("Question generation ended without a result")
 
 
-def _question_tokens(text: str) -> set[str]:
-    return set(re.findall(r"\w+", text.casefold(), flags=re.UNICODE))
+QUESTION_BOILERPLATE_WORDS = {
+    "which", "of", "the", "following", "is", "are", "a", "an", "what", "how", "why",
+    "when", "where", "who", "whom", "this", "that", "these", "those", "best", "describes",
+    "according", "to", "curriculum", "lesson", "statements", "statement", "true", "false",
+    "correct", "incorrect", "explain", "describe", "identify", "analyze", "in", "on", "at",
+    "by", "for", "with", "about", "from", "and", "or", "not", "does", "do", "did",
+    # Arabic question boilerplate
+    "ما", "ماذا", "من", "كيف", "لماذا", "أي", "التي", "الذي", "في", "على", "من", "عن",
+    "إلى", "مع", "هذا", "هذه", "الصحيحة", "الخاطئة", "وفقا", "للدرس"
+}
+
+
+def _question_tokens(text: str, remove_stopwords: bool = True) -> set[str]:
+    tokens = set(re.findall(r"\w+", text.casefold(), flags=re.UNICODE))
+    if remove_stopwords:
+        content_tokens = tokens - QUESTION_BOILERPLATE_WORDS
+        if len(content_tokens) >= 2:
+            return content_tokens
+    return tokens
 
 
 def _jaccard_similarity(left: str, right: str) -> float:
@@ -1087,9 +1483,14 @@ def generate_exam(
     context_docs: list[Any] | None = None,
     lesson_id: str | None = None,
     allow_partial: bool = False,
-    verify_answers: bool = True,
+    verify_answers: bool | None = None,
+    language: str = "en",
 ) -> tuple[dict[str, Any], Path]:
     """Generate and save a complete exam, optionally verifying each MCQ with one extra LLM call."""
+    if verify_answers is None:
+        verify_answers = VERIFY_MCQ_ANSWERS
+    start_calls = get_llm_call_count()
+
     ok, missing, model_name = validate_configuration()
     if not ok:
         raise ValueError(f"Missing required config values: {', '.join(missing)}")
@@ -1181,6 +1582,7 @@ def generate_exam(
                     focus_chunk_id=focus_chunk_id,
                     temperature=temperature,
                     correction_message=retry_correction,
+                    language=language,
                 )
                 _validate_question(question)
                 similar_question = _find_similar_previous_question(question, previous_questions)
@@ -1251,6 +1653,7 @@ def generate_exam(
         "exam_title": f"{topic.title()} Assessment",
         "topic": topic,
         "lesson_id": lesson_id,
+        "language": language,
         "lesson_title": next(
             (
                 (getattr(doc, "metadata", {}) or {}).get("lesson_title")
@@ -1260,7 +1663,9 @@ def generate_exam(
             None,
         ),
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "provider": LLM_PROVIDER,
         "model": model_name,
+        "llm_calls_made": get_llm_call_count() - start_calls,
         "question_count": len(questions),
         "total_points": sum(question["max_score"] for question in questions),
         "difficulty": difficulty,
@@ -1271,6 +1676,14 @@ def generate_exam(
 
     validate_exam(exam)
     output_path = save_exam(exam, output_dir)
+    calls_used = exam["llm_calls_made"]
+    logger.info(
+        "Exam generation complete: %d questions created with %d LLM calls (provider=%s, model=%s)",
+        len(questions),
+        calls_used,
+        LLM_PROVIDER,
+        model_name,
+    )
     return exam, output_path
 
 
