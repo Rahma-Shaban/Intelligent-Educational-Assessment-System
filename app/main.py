@@ -16,6 +16,7 @@ from app.routers import (
     curriculum_router,
     exam_router,
 )
+from scripts.config import LLM_PROVIDER
 from scripts.generation import validate_configuration
 
 app = FastAPI(
@@ -82,6 +83,7 @@ def health_check() -> dict[str, Any]:
         "llm_ready": is_valid,
         "missing_config": missing,
         "active_model": model_name,
+        "active_provider": LLM_PROVIDER,
     }
 
 
