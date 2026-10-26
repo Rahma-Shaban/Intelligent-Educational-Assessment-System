@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getExams, startAttempt } from '../../api/client';
+import { getExams } from '../../api/client';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -46,21 +46,8 @@ const StudentExamList = () => {
     fetchExams();
   }, []);
 
-  const handleStartExam = async (examId) => {
-    setStartingId(examId);
-    try {
-      // Call startAttempt to initialize the attempt session if backend supports it
-      await startAttempt(examId).catch((e) => {
-        console.warn('startAttempt non-fatal warning:', e);
-      });
-      navigate(`/student/exam/${examId}`);
-    } catch (err) {
-      console.error('Error starting exam:', err);
-      // Even if startAttempt fails, proceed to exam page so student can take it
-      navigate(`/student/exam/${examId}`);
-    } finally {
-      setStartingId(null);
-    }
+  const handleStartExam = (examId) => {
+    navigate(`/student/exam/${examId}`);
   };
 
   const filteredExams = exams.filter((exam) => {

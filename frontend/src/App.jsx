@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
+import ErrorBoundary from './components/ErrorBoundary';
 import LoadingSpinner from './components/ui/LoadingSpinner';
 
 // Auth pages
@@ -50,50 +51,52 @@ const HomeRedirect = () => {
 function App() {
   return (
     <AuthProvider>
-      <Routes>
-        {/* Public Auth Routes */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+      <ErrorBoundary>
+        <Routes>
+          {/* Public Auth Routes */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
 
-        {/* Professor Routes (Protected: role = 'professor') */}
-        <Route
-          path="/professor"
-          element={
-            <ProtectedRoute role="professor">
-              <Layout />
-            </ProtectedRoute>
-          }
-        >
-          <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<ProfessorDashboard />} />
-          <Route path="curriculum" element={<UploadCurriculum />} />
-          <Route path="generate" element={<GenerateExam />} />
-          <Route path="exams" element={<ExamList />} />
-          <Route path="exams/:id" element={<ExamDetail />} />
-          <Route path="analytics" element={<Analytics />} />
-        </Route>
+          {/* Professor Routes (Protected: role = 'professor') */}
+          <Route
+            path="/professor"
+            element={
+              <ProtectedRoute role="professor">
+                <Layout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<ProfessorDashboard />} />
+            <Route path="curriculum" element={<UploadCurriculum />} />
+            <Route path="generate" element={<GenerateExam />} />
+            <Route path="exams" element={<ExamList />} />
+            <Route path="exams/:id" element={<ExamDetail />} />
+            <Route path="analytics" element={<Analytics />} />
+          </Route>
 
-        {/* Student Routes (Protected: role = 'student') */}
-        <Route
-          path="/student"
-          element={
-            <ProtectedRoute role="student">
-              <Layout />
-            </ProtectedRoute>
-          }
-        >
-          <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<StudentDashboard />} />
-          <Route path="exams" element={<StudentExamList />} />
-          <Route path="exam/:id" element={<TakeExam />} />
-          <Route path="attempt/:id" element={<AttemptResult />} />
-          <Route path="results" element={<ResultsHistory />} />
-        </Route>
+          {/* Student Routes (Protected: role = 'student') */}
+          <Route
+            path="/student"
+            element={
+              <ProtectedRoute role="student">
+                <Layout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<StudentDashboard />} />
+            <Route path="exams" element={<StudentExamList />} />
+            <Route path="exam/:id" element={<TakeExam />} />
+            <Route path="attempt/:id" element={<AttemptResult />} />
+            <Route path="results" element={<ResultsHistory />} />
+          </Route>
 
-        {/* Root and Fallback Routes */}
-        <Route path="/" element={<HomeRedirect />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          {/* Root and Fallback Routes */}
+          <Route path="/" element={<HomeRedirect />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </ErrorBoundary>
     </AuthProvider>
   );
 }

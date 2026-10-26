@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getExam, startAttempt, submitAttempt } from '../../api/client';
+import { buildSubmissionPayload, formatTimer } from './examTaking';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -35,6 +36,10 @@ const TakeExam = () => {
 
   // Map of answers: index -> string
   const [answers, setAnswers] = useState({});
+  const answersRef = useRef(answers);
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
 
   // Timer states
   const [remainingSeconds, setRemainingSeconds] = useState(1800); // 30 minutes default
@@ -45,7 +50,65 @@ const TakeExam = () => {
   // Submit states
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [submitError, setSubmitError] = useState('');
+
+  const doSubmit = useCallback(async () => {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setSubmitting(true);
+    setSubmitError('');
+
+    const elapsedSeconds = Math.round((Date.now() - startTimeRef.current) / 1000);
+
+    // If we have an attempt_id from startAttempt, use it
+    // Otherwise, start one now
+    let currentAttemptId = attemptId;
+    if (!currentAttemptId) {
+      try {
+        const attemptData = await startAttempt(parseInt(id, 10));
+        currentAttemptId = attemptData.attempt_id;
+        setAttemptId(currentAttemptId);
+      } catch (err) {
+        console.error('Failed to start attempt:', err);
+        const detail =
+          err.response?.data?.detail ||
+          err.response?.data?.message ||
+          'Could not start an exam attempt. Make sure you are logged in as a student.';
+        setSubmitError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+        setSubmitting(false);
+        isSubmittingRef.current = false;
+        return;
+      }
+    }
+
+    const payload = buildSubmissionPayload({
+      attemptId: currentAttemptId,
+      questions: exam?.questions || [],
+      currentAnswers: answersRef.current || {},
+      elapsedSeconds,
+    });
+
+    try {
+      const response = await submitAttempt(payload);
+      setShowConfirmModal(false);
+      const resultId = response.id || response.attempt_id || response._id;
+      if (resultId) {
+        navigate(`/student/attempt/${resultId}`);
+      } else {
+        navigate('/student/results');
+      }
+    } catch (err) {
+      console.error('Submission error:', err);
+      const detail =
+        err.response?.data?.detail ||
+        err.response?.data?.message ||
+        'Error submitting answers. Please try again.';
+      setSubmitError(typeof detail === 'string' ? detail : JSON.stringify(detail));
+      setSubmitting(false);
+      isSubmittingRef.current = false;
+    }
+  }, [attemptId, exam, id, navigate]);
 
   useEffect(() => {
     const fetchExamAndStartAttempt = async () => {
@@ -91,7 +154,6 @@ const TakeExam = () => {
       setRemainingSeconds((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current);
-          handleAutoSubmit();
           return 0;
         }
         return prev - 1;
@@ -103,10 +165,13 @@ const TakeExam = () => {
     };
   }, [loading, exam]);
 
-  const handleAutoSubmit = () => {
-    alert('Time has expired! Submitting your answers automatically now.');
-    doSubmit();
-  };
+  // Handle auto-submit safely when timer reaches zero
+  useEffect(() => {
+    if (remainingSeconds === 0 && !loading && exam && !isSubmittingRef.current) {
+      alert('Time has expired! Submitting your answers automatically now.');
+      doSubmit();
+    }
+  }, [remainingSeconds, loading, exam, doSubmit]);
 
   const handleSelectAnswer = (index, value) => {
     setAnswers((prev) => ({
@@ -121,73 +186,6 @@ const TakeExam = () => {
 
   const totalQuestions = exam?.questions?.length || 0;
   const currentQuestion = exam?.questions ? exam.questions[currentIndex] : null;
-
-  const doSubmit = async () => {
-    setSubmitting(true);
-    setSubmitError('');
-
-    const elapsedSeconds = Math.round((Date.now() - startTimeRef.current) / 1000);
-    const questionsList = exam?.questions || [];
-
-    // Build answers as dict[str, str] mapping question_id -> answer string
-    // This matches the backend AttemptSubmitRequest schema
-    const answersDict = {};
-    questionsList.forEach((q, idx) => {
-      const questionId = q.question_id || q.id || `Q${String(idx + 1).padStart(2, '0')}`;
-      answersDict[questionId] = answers[idx] !== undefined ? String(answers[idx]) : '';
-    });
-
-    // If we have an attempt_id from startAttempt, use it
-    // Otherwise, start one now
-    let currentAttemptId = attemptId;
-    if (!currentAttemptId) {
-      try {
-        const attemptData = await startAttempt(parseInt(id, 10));
-        currentAttemptId = attemptData.attempt_id;
-        setAttemptId(currentAttemptId);
-      } catch (err) {
-        console.error('Failed to start attempt:', err);
-        const detail =
-          err.response?.data?.detail ||
-          err.response?.data?.message ||
-          'Could not start an exam attempt. Make sure you are logged in as a student.';
-        setSubmitError(typeof detail === 'string' ? detail : JSON.stringify(detail));
-        setSubmitting(false);
-        return;
-      }
-    }
-
-    const payload = {
-      attempt_id: currentAttemptId,
-      answers: answersDict,
-      duration_seconds: elapsedSeconds,
-    };
-
-    try {
-      const response = await submitAttempt(payload);
-      setShowConfirmModal(false);
-      const resultId = response.id || response.attempt_id || response._id;
-      if (resultId) {
-        navigate(`/student/attempt/${resultId}`);
-      } else {
-        navigate('/student/results');
-      }
-    } catch (err) {
-      console.error('Submission error:', err);
-      const detail =
-        err.response?.data?.detail ||
-        err.response?.data?.message ||
-        'Error submitting answers. Please try again.';
-      setSubmitError(typeof detail === 'string' ? detail : JSON.stringify(detail));
-      setSubmitting(false);
-    }
-  };
-
-  const formatTimer = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  };
 
   if (loading) {
     return <LoadingSpinner size="lg" message="Preparing assessment and timer..." />;

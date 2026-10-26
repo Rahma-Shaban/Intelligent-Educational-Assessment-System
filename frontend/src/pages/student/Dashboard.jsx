@@ -71,8 +71,16 @@ const StudentDashboard = () => {
       ? Math.round(dashboardData.average_score)
       : attempts.length > 0
       ? Math.round(
-          attempts.reduce((acc, curr) => acc + (curr.percentage || (curr.score / (curr.max_score || 1)) * 100 || 0), 0) /
-            attempts.length
+          attempts.reduce(
+            (acc, curr) =>
+              acc +
+              (curr.percentage !== undefined && curr.percentage !== null
+                ? curr.percentage
+                : ((curr.total_score ?? curr.score ?? 0) /
+                    (curr.max_possible_score ?? curr.max_score ?? curr.total_points ?? 1)) *
+                  100),
+            0
+          ) / attempts.length
         )
       : null;
 
@@ -208,12 +216,13 @@ const StudentDashboard = () => {
             <div className="space-y-3">
               {recentAttempts.map((attempt) => {
                 const attemptId = attempt.id || attempt._id || attempt.attempt_id;
-                const score = attempt.score ?? attempt.total_score ?? 0;
-                const maxScore = attempt.max_score ?? attempt.total_points ?? 100;
+                const score = attempt.total_score ?? attempt.score ?? 0;
+                const maxScore =
+                  attempt.max_possible_score ?? attempt.max_score ?? attempt.total_points ?? 100;
                 const pct =
-                  attempt.percentage !== undefined
+                  attempt.percentage !== undefined && attempt.percentage !== null
                     ? Math.round(attempt.percentage)
-                    : Math.round((score / maxScore) * 100);
+                    : Math.round((score / (maxScore || 1)) * 100);
 
                 const passed = pct >= 60;
 

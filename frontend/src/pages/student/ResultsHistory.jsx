@@ -113,10 +113,10 @@ const ResultsHistory = () => {
         <div className="space-y-4">
           {filtered.map((att) => {
             const attemptId = att.id || att._id || att.attempt_id;
-            const score = att.score ?? att.total_score ?? 0;
-            const maxScore = att.max_score ?? att.total_points ?? 100;
+            const score = att.total_score ?? att.score ?? 0;
+            const maxScore = att.max_possible_score ?? att.max_score ?? att.total_points ?? 100;
             const pct =
-              att.percentage !== undefined
+              att.percentage !== undefined && att.percentage !== null
                 ? Math.round(att.percentage)
                 : Math.round((score / (maxScore || 1)) * 100);
             const passed = pct >= 60;

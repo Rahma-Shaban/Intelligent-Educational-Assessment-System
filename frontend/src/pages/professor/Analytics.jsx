@@ -36,29 +36,14 @@ const Analytics = () => {
       console.warn('Failed to load professor dashboard analytics:', err);
       // Generate clean demonstration data if endpoint is fresh or empty
       setData({
-        average_score: 76.4,
-        total_students: 48,
-        total_exams: 6,
-        total_attempts: 142,
-        clusters: {
-          advanced: 14,
-          proficient: 22,
-          needs_intervention: 12,
+        class_analytics: {
+          avg_score_pct: 0,
+          total_students: 0,
+          total_attempts: 0,
+          topic_performance: {},
         },
-        topic_performance: [
-          { topic: 'Cognitive Taxonomy & Recall', score: 88 },
-          { topic: 'Formative Assessment Concepts', score: 79 },
-          { topic: 'Rubric Criteria Formulation', score: 71 },
-          { topic: 'Semantic Evaluation Logic', score: 62 },
-        ],
-        students: [
-          { id: 'st_1', name: 'Alex Johnson', email: 'alex@univ.edu', cluster: 'advanced', score: 94, attempts: 4 },
-          { id: 'st_2', name: 'Elena Rostova', email: 'elena@univ.edu', cluster: 'advanced', score: 91, attempts: 5 },
-          { id: 'st_3', name: 'Marcus Brody', email: 'marcus@univ.edu', cluster: 'proficient', score: 82, attempts: 3 },
-          { id: 'st_4', name: 'Sophia Chen', email: 'sophia@univ.edu', cluster: 'proficient', score: 78, attempts: 4 },
-          { id: 'st_5', name: 'David Miller', email: 'david@univ.edu', cluster: 'needs_intervention', score: 58, attempts: 2 },
-          { id: 'st_6', name: 'Fatima Al-Sayed', email: 'fatima@univ.edu', cluster: 'needs_intervention', score: 54, attempts: 3 },
-        ],
+        clusters: [],
+        students: [],
       });
     } finally {
       setLoading(false);
@@ -101,26 +86,72 @@ const Analytics = () => {
     return <LoadingSpinner size="lg" message="Computing cohort analytics..." />;
   }
 
-  const clusters = data?.clusters || {
-    advanced: 0,
-    proficient: 0,
-    needs_intervention: 0,
-  };
+  const clusterItems = Array.isArray(data?.clusters) ? data.clusters : [];
+  const clusters = Array.isArray(data?.clusters)
+    ? clusterItems.reduce(
+        (acc, c) => {
+          const lbl = String(c.cluster_label || c.label || '').toLowerCase();
+          if (lbl.includes('intervention') || lbl.includes('risk')) {
+            acc.needs_intervention = (acc.needs_intervention || 0) + 1;
+          } else if (lbl.includes('advanced')) {
+            acc.advanced = (acc.advanced || 0) + 1;
+          } else {
+            acc.proficient = (acc.proficient || 0) + 1;
+          }
+          return acc;
+        },
+        { advanced: 0, proficient: 0, needs_intervention: 0 }
+      )
+    : data?.clusters || { advanced: 0, proficient: 0, needs_intervention: 0 };
 
-  const totalClusterStudents = Object.values(clusters).reduce((a, b) => a + (Number(b) || 0), 0) || 1;
+  const totalClusterStudents =
+    Object.values(clusters).reduce((a, b) => a + (Number(b) || 0), 0) || (clusterItems.length || 1);
   const advancedPct = Math.round(((clusters.advanced || 0) / totalClusterStudents) * 100);
   const proficientPct = Math.round(((clusters.proficient || 0) / totalClusterStudents) * 100);
-  const interventionPct = Math.round(((clusters.needs_intervention || clusters.at_risk || 0) / totalClusterStudents) * 100);
+  const interventionPct = Math.round(
+    ((clusters.needs_intervention || clusters.at_risk || 0) / totalClusterStudents) * 100
+  );
 
-  const studentsList = data?.students || data?.student_list || [];
+  const studentsList = Array.isArray(data?.students)
+    ? data.students
+    : clusterItems.map((c) => ({
+        id: c.student_id,
+        name: c.student_name || `Student #${c.student_id}`,
+        email: c.student_email || `student${c.student_id}@univ.edu`,
+        cluster: c.cluster_label,
+        score: c.features?.avg_percentage ?? c.features?.score ?? c.score,
+        attempts: c.features?.exams_taken ?? c.attempts ?? 1,
+      }));
+
+  const avgScore =
+    data?.class_analytics?.avg_score_pct ??
+    data?.average_score ??
+    0;
+  const totalStudents =
+    data?.class_analytics?.total_students ??
+    data?.total_students ??
+    clusterItems.length;
+  const totalAttempts =
+    data?.class_analytics?.total_attempts ??
+    data?.total_attempts ??
+    0;
+
+  const topicPerformance = Array.isArray(data?.topic_performance)
+    ? data.topic_performance
+    : data?.class_analytics?.topic_performance && typeof data.class_analytics.topic_performance === 'object'
+    ? Object.entries(data.class_analytics.topic_performance).map(([topic, score]) => ({
+        topic,
+        score: typeof score === 'number' ? score : (score?.average || 0),
+      }))
+    : [];
 
   const filteredStudents = studentsList.filter((s) => {
     if (activeClusterTab === 'all') return true;
-    const clusterName = (s.cluster || s.group || '').toLowerCase();
+    const clusterName = String(s.cluster || s.group || '').toLowerCase();
     if (activeClusterTab === 'needs_intervention') {
       return clusterName.includes('intervention') || clusterName.includes('risk');
     }
-    return clusterName === activeClusterTab;
+    return clusterName.includes(activeClusterTab);
   });
 
   return (
@@ -253,26 +284,30 @@ const Analytics = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card title="Topic Performance Breakdown" subtitle="Class-wide average score per curriculum area">
           <div className="space-y-4 mt-2">
-            {(data?.topic_performance || []).map((tp, idx) => {
-              const score = tp.score || tp.average || 75;
-              const barColor =
-                score >= 80 ? 'bg-emerald-500' : score >= 70 ? 'bg-indigo-500' : 'bg-amber-500';
+            {(topicPerformance || []).length === 0 ? (
+              <p className="text-xs text-gray-500 py-4 text-center">No topic performance data available yet.</p>
+            ) : (
+              (topicPerformance || []).map((tp, idx) => {
+                const score = tp.score || tp.average || 0;
+                const barColor =
+                  score >= 80 ? 'bg-emerald-500' : score >= 70 ? 'bg-indigo-500' : 'bg-amber-500';
 
-              return (
-                <div key={idx} className="space-y-1">
-                  <div className="flex justify-between text-xs font-semibold">
-                    <span className="text-gray-800">{tp.topic}</span>
-                    <span className="text-gray-900 font-bold">{Math.round(score)}%</span>
+                return (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex justify-between text-xs font-semibold">
+                      <span className="text-gray-800">{tp.topic}</span>
+                      <span className="text-gray-900 font-bold">{Math.round(score)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className={`h-2 rounded-full ${barColor} transition-all duration-500`}
+                        style={{ width: `${score}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                    <div
-                      className={`h-2 rounded-full ${barColor} transition-all duration-500`}
-                      style={{ width: `${score}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </Card>
 
@@ -281,7 +316,7 @@ const Analytics = () => {
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
               <p className="text-xs text-gray-500 uppercase font-semibold">Average Class Score</p>
               <h4 className="text-2xl font-bold text-gray-900 mt-1">
-                {data?.average_score ? `${Math.round(data.average_score)}%` : '76%'}
+                {avgScore ? `${Math.round(avgScore)}%` : '0%'}
               </h4>
               <p className="text-[11px] text-emerald-600 font-medium mt-1">Passing Benchmark: 60%</p>
             </div>
@@ -289,7 +324,7 @@ const Analytics = () => {
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
               <p className="text-xs text-gray-500 uppercase font-semibold">Total Assessments Taken</p>
               <h4 className="text-2xl font-bold text-gray-900 mt-1">
-                {data?.total_attempts ?? 142}
+                {totalAttempts}
               </h4>
               <p className="text-[11px] text-indigo-600 font-medium mt-1">Automated semantic evaluations</p>
             </div>
@@ -305,7 +340,7 @@ const Analytics = () => {
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
               <p className="text-xs text-gray-500 uppercase font-semibold">Active Cohort Size</p>
               <h4 className="text-2xl font-bold text-gray-900 mt-1">
-                {data?.total_students ?? 48}
+                {totalStudents}
               </h4>
               <p className="text-[11px] text-gray-500 font-medium mt-1">Enrolled students</p>
             </div>

@@ -7,7 +7,14 @@ const Badge = ({
   size = 'md',
   className = '',
 }) => {
-  const normalized = String(children || variant || '').trim().toLowerCase();
+  const rawChildStr =
+    typeof children === 'string' || typeof children === 'number'
+      ? String(children)
+      : children && typeof children === 'object'
+      ? children.cluster_label || children.label || children.name || children.title || ''
+      : '';
+
+  const normalized = String(rawChildStr || variant || '').trim().toLowerCase();
 
   let colorClasses = 'bg-gray-100 text-gray-800 border-gray-200';
 
@@ -104,9 +111,9 @@ const Badge = ({
       ? 'Short Answer'
       : normalized === 'mcq'
       ? 'MCQ'
-      : typeof children === 'string'
-      ? children.charAt(0).toUpperCase() + children.slice(1)
-      : children;
+      : rawChildStr
+      ? rawChildStr.charAt(0).toUpperCase() + rawChildStr.slice(1)
+      : '';
 
   return (
     <span

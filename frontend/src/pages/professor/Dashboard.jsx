@@ -64,15 +64,34 @@ const ProfessorDashboard = () => {
 
   // Derive stats either from dashboard endpoint or exam collection
   const totalExams = dashboardData?.total_exams ?? exams.length;
-  const totalStudents = dashboardData?.total_students ?? dashboardData?.student_count ?? 0;
-  const avgScore = dashboardData?.average_score !== undefined
-    ? `${Math.round(dashboardData.average_score)}%`
-    : dashboardData?.avg_score !== undefined
-    ? `${Math.round(dashboardData.avg_score)}%`
-    : 'N/A';
-  const totalAttempts = dashboardData?.total_attempts ?? 0;
+  const totalStudents =
+    dashboardData?.class_analytics?.total_students ??
+    dashboardData?.total_students ??
+    dashboardData?.student_count ??
+    (Array.isArray(dashboardData?.clusters) ? dashboardData.clusters.length : 0);
+  const rawAvg =
+    dashboardData?.class_analytics?.avg_score_pct ??
+    dashboardData?.average_score ??
+    dashboardData?.avg_score;
+  const avgScore = rawAvg !== undefined && rawAvg !== null ? `${Math.round(rawAvg)}%` : '0%';
+  const totalAttempts =
+    dashboardData?.class_analytics?.total_attempts ??
+    dashboardData?.total_attempts ??
+    0;
 
-  const topicPerformance = dashboardData?.topic_performance || dashboardData?.topic_scores || [];
+  // Safely aggregate cluster distribution whether clusters is an array or an object map
+  const clusterCounts = Array.isArray(dashboardData?.clusters)
+    ? dashboardData.clusters.reduce((acc, c) => {
+        const lbl = String(c.cluster_label || c.label || 'Proficient');
+        acc[lbl] = (acc[lbl] || 0) + 1;
+        return acc;
+      }, {})
+    : dashboardData?.cluster_summary ||
+      (dashboardData?.clusters && typeof dashboardData.clusters === 'object' && !Array.isArray(dashboardData.clusters)
+        ? dashboardData.clusters
+        : null);
+
+  const hasClusterData = clusterCounts && Object.keys(clusterCounts).length > 0;
   const recentExams = exams.slice(0, 5);
 
   return (
@@ -277,18 +296,16 @@ const ProfessorDashboard = () => {
           </div>
 
           <Card title="Cohort Performance" subtitle="Distribution across proficiency bands">
-            {dashboardData?.clusters || dashboardData?.cluster_summary ? (
+            {hasClusterData ? (
               <div className="space-y-3 mt-2">
-                {Object.entries(dashboardData.clusters || dashboardData.cluster_summary).map(
-                  ([name, count]) => (
-                    <div key={name} className="flex items-center justify-between text-xs">
-                      <span className="font-medium capitalize text-gray-700">{name}</span>
-                      <span className="font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                        {count} students
-                      </span>
-                    </div>
-                  )
-                )}
+                {Object.entries(clusterCounts).map(([name, count]) => (
+                  <div key={name} className="flex items-center justify-between text-xs">
+                    <span className="font-medium capitalize text-gray-700">{name}</span>
+                    <span className="font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                      {count} students
+                    </span>
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="text-center py-6 text-gray-500 space-y-2">

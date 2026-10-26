@@ -277,9 +277,21 @@ const AttemptResult = () => {
                   </div>
                 )}
 
-                {/* For Essay / Short Answer: Rubric Criteria & Semantic Feedback */}
+                {/* For Essay / Short Answer: Rubric Criteria, Model Answer & Semantic Feedback */}
                 {(q.question_type === 'essay' || q.question_type === 'short_answer') && (
                   <div className="space-y-4 pt-1">
+                    {/* Reference / Model Answer */}
+                    {(q.reference_answer || q.model_answer) && (
+                      <div className="p-3.5 rounded-xl bg-indigo-50/70 border border-indigo-200 space-y-1 text-xs">
+                        <p className="font-bold text-indigo-800 uppercase tracking-wider text-[10px]">
+                          Model / Reference Answer:
+                        </p>
+                        <div className="text-indigo-950 font-medium whitespace-pre-wrap">
+                          {q.reference_answer || q.model_answer}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Rubric Breakdown */}
                     {(q.rubric_breakdown || q.rubric_evaluation || q.rubric_scores || q.rubric) && (
                       <div className="space-y-2">
@@ -303,11 +315,11 @@ const AttemptResult = () => {
                                       {r.criterion}
                                     </td>
                                     <td className="px-3.5 py-2.5 text-gray-600">
-                                      {r.comment || r.remarks || r.description || 'Evaluated'}
+                                      {r.feedback || r.comment || r.remarks || r.description || 'Evaluated'}
                                     </td>
                                     <td className="px-3.5 py-2.5 text-right font-bold text-indigo-600">
                                       {r.earned_points ?? r.score ?? r.points ?? '-'} /{' '}
-                                      {r.max_points ?? r.points ?? '-'}
+                                      {r.max_points ?? r.max_score ?? r.points ?? '-'}
                                     </td>
                                   </tr>
                                 )
@@ -319,12 +331,12 @@ const AttemptResult = () => {
                     )}
 
                     {/* Feedback and Strengths / Weaknesses */}
-                    {(q.feedback || q.strengths || q.weaknesses) && (
+                    {(q.feedback || q.strengths || q.weaknesses || q.learning_gaps) && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                         {(q.strengths || q.feedback) && (
                           <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200/80 space-y-1">
                             <span className="font-bold text-emerald-800 flex items-center gap-1.5 uppercase text-[10px] tracking-wider">
-                              <ThumbsUp className="w-3.5 h-3.5 text-emerald-600" /> Strengths
+                              <ThumbsUp className="w-3.5 h-3.5 text-emerald-600" /> Strengths & Observations
                             </span>
                             <div className="text-emerald-950 leading-relaxed">
                               {Array.isArray(q.strengths) ? (
@@ -340,20 +352,20 @@ const AttemptResult = () => {
                           </div>
                         )}
 
-                        {q.weaknesses && (
+                        {(q.weaknesses || q.learning_gaps) && (
                           <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/80 space-y-1">
                             <span className="font-bold text-amber-800 flex items-center gap-1.5 uppercase text-[10px] tracking-wider">
                               <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Areas for Improvement
                             </span>
                             <div className="text-amber-950 leading-relaxed">
-                              {Array.isArray(q.weaknesses) ? (
+                              {Array.isArray(q.weaknesses || q.learning_gaps) ? (
                                 <ul className="list-disc pl-4 space-y-0.5">
-                                  {q.weaknesses.map((w, wIdx) => (
+                                  {(q.weaknesses || q.learning_gaps).map((w, wIdx) => (
                                     <li key={wIdx}>{w}</li>
                                   ))}
                                 </ul>
                               ) : (
-                                <p>{q.weaknesses}</p>
+                                <p>{q.weaknesses || q.learning_gaps}</p>
                               )}
                             </div>
                           </div>

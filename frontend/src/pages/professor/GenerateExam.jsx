@@ -90,18 +90,19 @@ const GenerateExam = () => {
         const list = Array.isArray(data) ? data : data?.lessons || [];
         setLessons(list);
         if (list.length > 0) {
-          const firstId = list[0].id || list[0].lesson_id || list[0].title || list[0];
-          setSelectedLesson(typeof firstId === 'object' ? firstId.id : firstId);
+          const first = list[0];
+          const firstId = first.lesson_id || first.id || first.title || first;
+          setSelectedLesson(typeof firstId === 'object' ? firstId.lesson_id || firstId.id : String(firstId));
         }
       } catch (err) {
         console.warn('Could not load lessons list:', err);
-        // Fallback default sample lessons so professor can still generate
+        // Fallback default sample lessons matching indexed curriculum
         setLessons([
-          { id: 'ch1_intro', title: 'Chapter 1: Introduction to Educational Systems' },
-          { id: 'ch2_assessment', title: 'Chapter 2: Formative vs Summative Assessment' },
-          { id: 'ch3_taxonomy', title: "Chapter 3: Bloom's Cognitive Taxonomy" },
+          { lesson_id: '1-1', lesson_title: '1-1 Introduction to Machine Learning' },
+          { lesson_id: '1-2', lesson_title: '1-2 Supervised vs Unsupervised Learning' },
+          { lesson_id: '2-1', lesson_title: '2-1 Linear Regression & Cost Functions' },
         ]);
-        setSelectedLesson('ch1_intro');
+        setSelectedLesson('1-1');
       } finally {
         setLoadingLessons(false);
       }
@@ -223,8 +224,8 @@ const GenerateExam = () => {
                     required
                   >
                     {lessons.map((lesson, idx) => {
-                      const val = lesson.id || lesson.lesson_id || lesson.title || lesson;
-                      const label = lesson.title || lesson.name || lesson.id || `Lesson ${idx + 1}`;
+                      const val = lesson.lesson_id || lesson.id || lesson.title || lesson;
+                      const label = lesson.lesson_title || lesson.title || lesson.name || lesson.lesson_id || lesson.id || `Lesson ${idx + 1}`;
                       return (
                         <option key={String(val)} value={val}>
                           {label}
