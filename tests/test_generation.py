@@ -533,6 +533,248 @@ class GenerationValidationTests(unittest.TestCase):
             generation._send_completion("test")
         self.assertNotIn(secret, str(raised.exception))
 
+    def test_groq_configuration_requires_an_api_key(self):
+        with (
+            patch.object(generation, "LLM_PROVIDER", "groq"),
+            patch.object(generation, "GROQ_API_KEY", None),
+            patch.object(generation, "GROQ_MODEL_NAME", "openai/gpt-oss-120b"),
+        ):
+            self.assertEqual(
+                generation.validate_configuration(),
+                (False, ["GROQ_API_KEY"], "openai/gpt-oss-120b"),
+            )
+
+    def test_groq_completion_uses_json_mode_and_configured_model(self):
+        mock_response = unittest.mock.MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": '{"ready":true}'}, "finish_reason": "stop"}]
+        }
+        mock_client = unittest.mock.MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__enter__.return_value = mock_client
+        mock_client.__exit__.return_value = None
+
+        with (
+            patch.object(generation, "LLM_PROVIDER", "groq"),
+            patch.object(generation, "GROQ_API_KEY", "test-groq-key"),
+            patch.object(generation, "GROQ_MODEL_NAME", "openai/gpt-oss-120b"),
+            patch("httpx.Client", return_value=mock_client),
+        ):
+            result = generation._send_completion("Make a JSON object")
+
+        self.assertEqual(result, '{"ready":true}')
+        mock_client.post.assert_called_once()
+        call_kwargs = mock_client.post.call_args.kwargs
+        self.assertEqual(call_kwargs["headers"]["Authorization"], "Bearer test-groq-key")
+        self.assertEqual(call_kwargs["json"]["model"], "openai/gpt-oss-120b")
+        self.assertEqual(call_kwargs["json"]["response_format"], {"type": "json_object"})
+        self.assertEqual(call_kwargs["json"]["max_completion_tokens"], generation.MAX_COMPLETION_TOKENS)
+
+    def test_groq_authentication_error_is_actionable(self):
+        mock_response = unittest.mock.MagicMock()
+        mock_response.status_code = 401
+        mock_response.text = '{"error": {"message": "Invalid API key"}}'
+        mock_client = unittest.mock.MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__enter__.return_value = mock_client
+        mock_client.__exit__.return_value = None
+
+        with (
+            patch.object(generation, "LLM_PROVIDER", "groq"),
+            patch.object(generation, "GROQ_API_KEY", "bad-key"),
+            patch("httpx.Client", return_value=mock_client),
+            self.assertRaisesRegex(generation.LLMProviderError, "authentication or permission failed"),
+        ):
+            generation._send_completion("test")
+
+    def test_groq_bad_model_error_is_actionable(self):
+        mock_response = unittest.mock.MagicMock()
+        mock_response.status_code = 404
+        mock_response.text = '{"error": {"message": "model not found"}}'
+        mock_client = unittest.mock.MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__enter__.return_value = mock_client
+        mock_client.__exit__.return_value = None
+
+        with (
+            patch.object(generation, "LLM_PROVIDER", "groq"),
+            patch.object(generation, "GROQ_API_KEY", "test-key"),
+            patch("httpx.Client", return_value=mock_client),
+            self.assertRaisesRegex(generation.LLMProviderError, "unavailable or the request is unsupported"),
+        ):
+            generation._send_completion("test")
+
+    def test_groq_quota_error_is_actionable(self):
+        mock_response = unittest.mock.MagicMock()
+        mock_response.status_code = 429
+        mock_response.text = '{"error": {"message": "rate limit reached"}}'
+        mock_client = unittest.mock.MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__enter__.return_value = mock_client
+        mock_client.__exit__.return_value = None
+
+        with (
+            patch.object(generation, "LLM_PROVIDER", "groq"),
+            patch.object(generation, "GROQ_API_KEY", "test-key"),
+            patch.object(generation.time, "sleep"),
+            patch("httpx.Client", return_value=mock_client),
+            self.assertRaisesRegex(generation.LLMProviderError, "quota or rate limit exceeded"),
+        ):
+            generation._send_completion("test")
+
+    def test_groq_server_error_is_actionable(self):
+        mock_response = unittest.mock.MagicMock()
+        mock_response.status_code = 503
+        mock_response.text = "Service Unavailable"
+        mock_client = unittest.mock.MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__enter__.return_value = mock_client
+        mock_client.__exit__.return_value = None
+
+        with (
+            patch.object(generation, "LLM_PROVIDER", "groq"),
+            patch.object(generation, "GROQ_API_KEY", "test-key"),
+            patch("httpx.Client", return_value=mock_client),
+            self.assertRaisesRegex(generation.LLMProviderError, "server error"),
+        ):
+            generation._send_completion("test")
+
+    def test_groq_empty_response_retries_with_larger_output_budget(self):
+        resp1 = unittest.mock.MagicMock()
+        resp1.status_code = 200
+        resp1.json.return_value = {"choices": [{"message": {"content": ""}, "finish_reason": "stop"}]}
+        resp2 = unittest.mock.MagicMock()
+        resp2.status_code = 200
+        resp2.json.return_value = {"choices": [{"message": {"content": '{"status":"READY"}'}, "finish_reason": "stop"}]}
+
+        mock_client = unittest.mock.MagicMock()
+        mock_client.post.side_effect = [resp1, resp2]
+        mock_client.__enter__.return_value = mock_client
+        mock_client.__exit__.return_value = None
+
+        with (
+            patch.object(generation, "LLM_PROVIDER", "groq"),
+            patch.object(generation, "GROQ_API_KEY", "test-key"),
+            patch("httpx.Client", return_value=mock_client),
+        ):
+            result = generation._send_completion("test", max_tokens=10)
+
+        self.assertEqual(result, '{"status":"READY"}')
+        self.assertEqual(mock_client.post.call_count, 2)
+        calls = mock_client.post.call_args_list
+        self.assertEqual(calls[0].kwargs["json"]["max_completion_tokens"], 10)
+        self.assertEqual(calls[1].kwargs["json"]["max_completion_tokens"], generation.RETRY_COMPLETION_TOKENS)
+
+    def test_groq_api_error_does_not_expose_api_key(self):
+        secret = "super-secret-groq-key-xyz"
+        mock_response = unittest.mock.MagicMock()
+        mock_response.status_code = 400
+        mock_response.text = f"Invalid request containing {secret}"
+        mock_client = unittest.mock.MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__enter__.return_value = mock_client
+        mock_client.__exit__.return_value = None
+
+        with (
+            patch.object(generation, "LLM_PROVIDER", "groq"),
+            patch.object(generation, "GROQ_API_KEY", secret),
+            patch("httpx.Client", return_value=mock_client),
+            self.assertRaises(ValueError) as raised,
+        ):
+            generation._send_completion("test")
+        self.assertNotIn(secret, str(raised.exception))
+
+    def test_groq_connection_check_makes_one_minimal_request(self):
+        mock_response = unittest.mock.MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": '{"status":"READY"}'}, "finish_reason": "stop"}]
+        }
+        mock_client = unittest.mock.MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__enter__.return_value = mock_client
+        mock_client.__exit__.return_value = None
+
+        with (
+            patch.object(generation, "LLM_PROVIDER", "groq"),
+            patch.object(generation, "GROQ_API_KEY", "test-key"),
+            patch.object(generation, "GROQ_MODEL_NAME", "openai/gpt-oss-120b"),
+            patch("httpx.Client", return_value=mock_client),
+        ):
+            result = generation.test_groq_connection()
+
+        self.assertEqual(result["content"], '{"status":"READY"}')
+        self.assertEqual(result["provider"], "groq")
+        self.assertEqual(result["model"], "openai/gpt-oss-120b")
+        mock_client.post.assert_called_once()
+        self.assertEqual(mock_client.post.call_args.kwargs["json"]["max_completion_tokens"], 64)
+
+    def test_client_throttling_respects_min_interval(self):
+        with (
+            patch.object(generation, "LLM_MIN_INTERVAL_SECONDS", 2.0),
+            patch.object(generation.time, "sleep") as mock_sleep,
+            patch.object(generation.time, "monotonic", side_effect=[100.5, 100.5]),
+        ):
+            generation._LAST_LLM_CALL_TIMESTAMP = 100.0
+            generation._throttle_client()
+            mock_sleep.assert_called_once_with(1.5)
+
+    def test_parse_retry_after_handles_various_header_formats(self):
+        self.assertEqual(generation._parse_retry_after({"retry-after": "5"}), 5.0)
+        self.assertEqual(generation._parse_retry_after({"x-ratelimit-reset-requests": "500ms"}), 0.5)
+        self.assertEqual(generation._parse_retry_after({"x-ratelimit-reset-tokens": "1m30s"}), 90.0)
+        self.assertEqual(generation._parse_retry_after({}), 2.0)
+
+    def test_groq_429_retries_and_succeeds_after_backoff(self):
+        resp_429 = unittest.mock.MagicMock()
+        resp_429.status_code = 429
+        resp_429.headers = {"retry-after": "1.5"}
+        resp_429.text = '{"error": "rate limit"}'
+
+        resp_200 = unittest.mock.MagicMock()
+        resp_200.status_code = 200
+        resp_200.json.return_value = {
+            "choices": [{"message": {"content": '{"status":"READY"}'}, "finish_reason": "stop"}]
+        }
+
+        mock_client = unittest.mock.MagicMock()
+        mock_client.post.side_effect = [resp_429, resp_200]
+        mock_client.__enter__.return_value = mock_client
+        mock_client.__exit__.return_value = None
+
+        with (
+            patch.object(generation, "LLM_PROVIDER", "groq"),
+            patch.object(generation, "GROQ_API_KEY", "test-key"),
+            patch.object(generation, "_throttle_client"),
+            patch.object(generation.time, "sleep") as mock_sleep,
+            patch("httpx.Client", return_value=mock_client),
+        ):
+            res = generation._send_completion("test")
+
+        self.assertEqual(res, '{"status":"READY"}')
+        mock_sleep.assert_called_once_with(1.5)
+        self.assertEqual(mock_client.post.call_count, 2)
+
+    def test_fallback_provider_chain_switches_on_error(self):
+        with (
+            patch.object(generation, "LLM_PROVIDER", "groq"),
+            patch.object(generation, "LLM_FALLBACK_PROVIDERS", ["gemini"]),
+            patch.object(generation, "_invoke_provider_completion") as invoke_mock,
+        ):
+            invoke_mock.side_effect = [
+                generation.LLMProviderError("Groq 503 error"),
+                ('{"status":"FROM_GEMINI"}', "gemini", "gemini-2.5-flash-lite"),
+            ]
+            res = generation._send_completion("test")
+
+        self.assertEqual(res, '{"status":"FROM_GEMINI"}')
+        self.assertEqual(invoke_mock.call_count, 2)
+        self.assertEqual(invoke_mock.call_args_list[0].args[0], "groq")
+        self.assertEqual(invoke_mock.call_args_list[1].args[0], "gemini")
+
+
+
     def test_invalid_source_ref_is_retried_by_single_question_generation(self):
         invalid = sample_question()
         invalid["source_refs"][0]["chunk_id"] = "not-provided"
@@ -763,6 +1005,7 @@ class GenerationValidationTests(unittest.TestCase):
                     lesson_id="1-1",
                     context_docs=[sample_document()],
                     output_dir=temporary_directory,
+                    verify_answers=True,
                 )
 
         self.assertEqual(generate.call_count, 2)
@@ -968,6 +1211,83 @@ class GenerationValidationTests(unittest.TestCase):
                 load_vectorstore(embeddings=None, persist_dir=missing_path)
             client_constructor.assert_not_called()
             self.assertFalse(missing_path.exists())
+
+    def test_validate_question_strips_mcq_option_prefixes(self):
+        q = sample_question()
+        q["options"] = ["A) Data analysis", "B. Unrelated one", "C: Unrelated two", "4 - Unrelated three"]
+        q["reference_answer"] = "A: Data analysis"
+        generation._validate_question(q)
+        self.assertEqual(q["options"], ["Data analysis", "Unrelated one", "Unrelated two", "Unrelated three"])
+        self.assertEqual(q["reference_answer"], "A: Data analysis")
+
+    def test_validate_question_rejects_lazy_distractors(self):
+        for bad_opt in ["All of the above", "None of the above", "both a and b", "Neither A nor B"]:
+            q = sample_question()
+            q["options"][3] = bad_opt
+            with self.assertRaisesRegex(ValueError, "prohibited low-quality distractor"):
+                generation._validate_question(q)
+
+    def test_generate_single_question_retries_and_aligns_difficulty_and_bloom(self):
+        wrong_bloom = sample_question()
+        wrong_bloom["bloom_level"] = "remember"
+        aligned = sample_question()
+        aligned["bloom_level"] = "apply"
+
+        with patch.object(
+            generation,
+            "_send_completion",
+            side_effect=[json.dumps(wrong_bloom), json.dumps(aligned)],
+        ) as mock_send:
+            res = generation.generate_single_question(
+                topic="Lesson One",
+                question_type="mcq",
+                context_docs=[sample_document()],
+                difficulty="medium",
+                bloom_level="apply",
+            )
+
+        self.assertEqual(mock_send.call_count, 2)
+        self.assertIn("bloom_level='remember'", mock_send.call_args.args[0])
+        self.assertEqual(res["bloom_level"], "apply")
+
+    def test_duplicate_detection_ignores_boilerplate_stems(self):
+        q1 = {
+            "question": "Which of the following statements about neural networks is correct?",
+            "reference_answer": "A: Neural networks process data using multiple layers.",
+        }
+        q2 = {
+            "question": "Which of the following statements about decision trees is correct?",
+            "reference_answer": "A: Decision trees split features hierarchically.",
+        }
+        # Different content topics must not be flagged as duplicates despite identical stems
+        is_dup = generation._is_duplicate_question(q2, [q1], threshold=0.55)
+        self.assertFalse(is_dup)
+
+        # Identical question phrasing must be flagged
+        q3 = {
+            "question": "In deep learning, which statement about neural networks is correct?",
+            "reference_answer": "A: Neural networks process data using multiple layers.",
+        }
+        self.assertTrue(generation._is_duplicate_question(q3, [q1], threshold=0.55))
+
+    def test_mcq_rubric_and_max_score_are_enforced_to_one(self):
+        raw = sample_question()
+        raw["max_score"] = 4
+        raw["rubric"] = [
+            {"criterion": "Option A", "points": 1, "description": "desc"},
+            {"criterion": "Option B", "points": 1, "description": "desc"},
+            {"criterion": "Option C", "points": 1, "description": "desc"},
+            {"criterion": "Option D", "points": 1, "description": "desc"},
+        ]
+        with patch.object(generation, "_send_completion", return_value=json.dumps(raw)):
+            res = generation.generate_single_question(
+                topic="Lesson One",
+                question_type="mcq",
+                context_docs=[sample_document()],
+            )
+        self.assertEqual(res["max_score"], 1)
+        self.assertEqual(len(res["rubric"]), 1)
+        self.assertEqual(res["rubric"][0]["points"], 1)
 
 
 if __name__ == "__main__":

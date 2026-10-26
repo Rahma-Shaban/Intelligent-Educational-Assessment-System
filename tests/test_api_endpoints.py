@@ -237,6 +237,36 @@ class ApiEndpointsTestCase(unittest.TestCase):
         token = login_res.json()["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
 
+        # 1. Zero-attempt state: returns welcoming guidance without triggering LLM
+        r0 = self.client.get("/api/analytics/dashboard/student", headers=headers)
+        self.assertEqual(r0.status_code, 200)
+        data0 = r0.json()
+        self.assertIn("student", data0)
+        self.assertIn("feedback", data0)
+        self.assertIn("Welcome, Alice Johnson", data0["feedback"]["summary"])
+
+        # 2. Add a completed attempt for student to verify diagnostic feedback pathway
+        from datetime import datetime, timezone
+        from app.models import ExamAttempt, User, Exam
+        db = TestingSessionLocal()
+        user = db.query(User).filter_by(email="alice@student.edu").first()
+        exam = db.query(Exam).first()
+        self.assertIsNotNone(user)
+        self.assertIsNotNone(exam)
+        attempt = ExamAttempt(
+            student_id=user.id,
+            exam_id=exam.id,
+            total_score=85.0,
+            max_possible_score=100.0,
+            started_at=datetime.now(timezone.utc),
+            submitted_at=datetime.now(timezone.utc),
+            duration_seconds=600,
+        )
+        db.add(attempt)
+        db.commit()
+        db.close()
+
+        # 3. Post-attempt state: generate_student_feedback is invoked
         r = self.client.get("/api/analytics/dashboard/student", headers=headers)
         self.assertEqual(r.status_code, 200)
         data = r.json()
@@ -244,6 +274,7 @@ class ApiEndpointsTestCase(unittest.TestCase):
         self.assertIn("feedback", data)
         self.assertEqual(data["student"]["email"], "alice@student.edu")
         self.assertEqual(data["feedback"]["summary"], "Great progress overall.")
+        self.assertEqual(len(data["attempts"]), 1)
 
 
 if __name__ == "__main__":
