@@ -101,6 +101,7 @@ class ExamGenerateRequest(BaseModel):
         description="Allowed types: 'mcq', 'short_answer', 'essay'",
     )
     number_of_questions: int = Field(default=5, ge=1, le=25)
+    language: str = Field(default="en", description="Exam language: 'en' or 'ar'")
 
 
 class ExamListItem(BaseModel):
@@ -190,6 +191,7 @@ class AttemptResponse(BaseModel):
     max_possible_score: float | None = None
     percentage: float | None = None
     graded_answers: list[dict[str, Any]] | dict[str, Any] | None = None
+    exam_title: str | None = None
 
 
 # ==============================================================================
@@ -205,6 +207,8 @@ class ClusterResponse(BaseModel):
     student_id: int
     cluster_label: str
     features: dict[str, Any]
+    student_name: str | None = None
+    student_email: str | None = None
 
 
 class StudentDashboardResponse(BaseModel):
