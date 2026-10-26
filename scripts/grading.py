@@ -300,6 +300,9 @@ def grade_exam_submission(
     if not isinstance(questions, list):
         raise ValueError("exam must contain a 'questions' list")
 
+    from scripts.generation import get_llm_call_count
+    start_calls = get_llm_call_count()
+
     graded_answers: list[dict[str, Any]] = []
 
     for idx, question in enumerate(questions, start=1):
@@ -336,7 +339,14 @@ def grade_exam_submission(
             "score": grade_res["score"],
             "max_score": grade_res["max_score"],
             "feedback": grade_res["feedback"],
+            "correct_answer": str(question.get("correct_answer") or question.get("reference_answer") or ""),
+            "reference_answer": str(question.get("reference_answer") or question.get("correct_answer") or ""),
+            "model_answer": str(question.get("reference_answer") or question.get("correct_answer") or ""),
+            "explanation": str(question.get("explanation") or ""),
+            "rubric_breakdown": grade_res.get("criterion_scores", []),
         }
+        if "options" in question:
+            entry["options"] = question["options"]
         if "is_correct" in grade_res:
             entry["is_correct"] = grade_res["is_correct"]
         if "criterion_scores" in grade_res:
@@ -364,9 +374,13 @@ def grade_exam_submission(
         else 0.0
     )
 
+    calls_made = get_llm_call_count() - start_calls
+    logger.info("Grading complete for %d questions using %d LLM calls", len(graded_answers), calls_made)
+
     return {
         "total_score": round(total_score, 2),
         "max_possible_score": round(max_possible_score, 2),
         "percentage": percentage,
         "graded_answers": graded_answers,
+        "llm_calls_made": calls_made,
     }
