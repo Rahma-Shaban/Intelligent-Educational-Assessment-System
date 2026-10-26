@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -21,6 +22,7 @@ from app.schemas import (
 )
 from scripts.grading import grade_exam_submission
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Attempts"])
 
 
@@ -40,6 +42,8 @@ def _format_attempt_response(attempt: ExamAttempt) -> AttemptResponse:
         except Exception:
             graded_answers = None
 
+    exam_title = attempt.exam.title if attempt.exam else None
+
     return AttemptResponse(
         id=attempt.id,
         exam_id=attempt.exam_id,
@@ -51,6 +55,7 @@ def _format_attempt_response(attempt: ExamAttempt) -> AttemptResponse:
         max_possible_score=attempt.max_possible_score,
         percentage=percentage,
         graded_answers=graded_answers,
+        exam_title=exam_title,
     )
 
 

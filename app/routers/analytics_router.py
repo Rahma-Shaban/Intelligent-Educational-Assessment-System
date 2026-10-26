@@ -116,11 +116,14 @@ def compute_clustering(
             )
             db.add(new_record)
 
+        st_user = db.scalar(select(User).where(User.id == s_id))
         output.append(
             ClusterResponse(
                 student_id=s_id,
                 cluster_label=c_label,
                 features=features_dict,
+                student_name=st_user.name if st_user else None,
+                student_email=st_user.email if st_user else None,
             )
         )
 
@@ -314,10 +317,13 @@ def get_professor_dashboard(
         except Exception:
             feats = {}
 
+        st_user = db.scalar(select(User).where(User.id == cr.student_id))
         item = {
             "student_id": cr.student_id,
             "cluster_label": cr.cluster_label,
             "features": feats,
+            "student_name": st_user.name if st_user else f"Student #{cr.student_id}",
+            "student_email": st_user.email if st_user else f"student{cr.student_id}@univ.edu",
         }
         cluster_dicts.append(item)
         cluster_list.append(ClusterResponse(**item))

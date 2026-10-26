@@ -65,6 +65,7 @@ def create_exam(
             question_types=payload.question_types,
             number_of_questions=payload.number_of_questions,
             allow_partial=True,
+            language=payload.language,
         )
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(
