@@ -15,7 +15,7 @@ from sklearn.preprocessing import StandardScaler
 
 # تحديد المسارات الديناميكية لمجلدات المشروع
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_PATH = os.path.join(BASE_DIR, "data", "processed", "students_for_clustering.csv")
+DATA_PATH = os.path.join(BASE_DIR, "data", "processed", "students_for_clustering(1).csv")
 OUTPUT_DIR = os.path.join(BASE_DIR, "outputs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
