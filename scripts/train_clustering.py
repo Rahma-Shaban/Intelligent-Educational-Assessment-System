@@ -31,7 +31,7 @@ from sklearn.preprocessing import StandardScaler
 from scripts.config import OUTPUTS_DIR, PROCESSED_DATA_DIR
 
 DEFAULT_DATASET = PROCESSED_DATA_DIR / "students_for_clustering (1).csv"
-TARGET_MODEL_PATH = OUTPUTS_DIR / "student_cluster_pipeline.pkl"
+TARGET_MODEL_PATH = OUTPUTS_DIR / "student_cluster_pipeline1.pkl"
 
 FEATURES = [
     "avg_percentage",
