@@ -25,7 +25,7 @@ try:
 except ImportError:
     OUTPUTS_DIR = os.path.join(os.path.dirname(__file__), "..", "outputs")
 
-MODEL_PATH = os.path.join(OUTPUTS_DIR, "student_cluster_pipeline.pkl")
+MODEL_PATH = os.path.join(OUTPUTS_DIR, "student_cluster_pipeline1.pkl")
 
 
 # ==========================================
