@@ -13,15 +13,15 @@ const Button = ({
   icon: Icon,
   ...props
 }) => {
-  const baseStyles = 'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed select-none';
+  const baseStyles = 'inline-flex items-center justify-center font-bold rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed select-none';
 
   const variants = {
-    primary: 'bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-500 shadow-sm',
-    secondary: 'bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-400 border border-gray-300',
+    primary: 'bg-gradient-to-b from-clay-600 to-clay-800 text-white hover:from-clay-500 hover:to-clay-700 focus:ring-clay-500 shadow-warm',
+    secondary: 'bg-sand text-cocoa-800 hover:bg-cocoa-100 focus:ring-cocoa-300 border border-cocoa-300/50',
     danger: 'bg-rose-600 text-white hover:bg-rose-700 focus:ring-rose-500 shadow-sm',
-    success: 'bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500 shadow-sm',
-    outline: 'border border-indigo-600 text-indigo-600 hover:bg-indigo-50 focus:ring-indigo-500',
-    ghost: 'text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus:ring-gray-300',
+    success: 'bg-teal-700 text-white hover:bg-teal-800 focus:ring-teal-600 shadow-sm',
+    outline: 'border-2 border-clay-200 text-clay-700 hover:bg-clay-50 focus:ring-clay-300 bg-white',
+    ghost: 'text-cocoa-500 hover:text-ink hover:bg-sand focus:ring-cocoa-300',
   };
 
   const sizes = {

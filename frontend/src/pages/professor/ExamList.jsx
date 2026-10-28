@@ -15,7 +15,8 @@ import {
   Calendar,
   Layers,
   Award,
-  ArrowRight,
+  ArrowLeft,
+  Code2,
 } from 'lucide-react';
 
 const ExamList = () => {
@@ -35,7 +36,7 @@ const ExamList = () => {
       );
     } catch (err) {
       console.error('Failed to toggle publish status:', err);
-      setError('Could not update publication status. Please try again.');
+      setError('معرفناش نغيّر حالة النشر، حاول تاني.');
     } finally {
       setTogglingId(null);
     }
@@ -51,7 +52,7 @@ const ExamList = () => {
         setExams(list);
       } catch (err) {
         console.error('Failed to fetch exams:', err);
-        setError('Failed to load exams list. Please try again.');
+        setError('فشل تحميل قائمة الامتحانات، حاول تاني.');
       } finally {
         setLoading(false);
       }
@@ -77,24 +78,23 @@ const ExamList = () => {
   });
 
   if (loading) {
-    return <LoadingSpinner size="lg" message="Loading generated exams..." />;
+    return <LoadingSpinner size="lg" message="جاري تحميل الامتحانات..." />;
   }
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">
-            Generated Assessments
-          </h1>
-          <p className="text-sm text-gray-600 mt-1">
-            Review and inspect active exams, answer keys, rubrics, and source citations.
+        <div className="relative">
+          <span className="code-chip absolute -top-3 end-0 rotate-2 hidden md:inline-block">exams.filter(status)</span>
+          <h1 className="font-display text-3xl md:text-4xl text-ink">قائمة الامتحانات 📚</h1>
+          <p className="text-sm text-cocoa-500 mt-1">
+            راجع الامتحانات ومفاتيح الإجابة ونماذج التصحيح والمصادر.
           </p>
         </div>
         <Link to="/professor/generate">
-          <Button variant="primary" size="md" icon={Sparkles}>
-            Generate New Exam
+          <Button variant="primary" size="md" icon={Sparkles} className="btn-cut">
+            إنشاء امتحان جديد
           </Button>
         </Link>
       </div>
@@ -105,50 +105,50 @@ const ExamList = () => {
       <Card className="p-4">
         <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
           <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3 pointer-events-none" />
+            <Search className="w-4 h-4 text-cocoa-300 absolute start-3 top-3 pointer-events-none" />
             <input
               type="text"
-              placeholder="Search by title, topic, or lesson..."
+              placeholder="دوّر بالعنوان أو الموضوع..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600"
+              className="w-full ps-10 pe-3 py-2 text-sm bg-white border-2 border-cocoa-300/60 rounded-xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 outline-none transition"
             />
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto">
-            <Filter className="w-4 h-4 text-gray-400 shrink-0" />
+            <Filter className="w-4 h-4 text-cocoa-300 shrink-0" />
             <select
               value={filterDifficulty}
               onChange={(e) => setFilterDifficulty(e.target.value)}
-              className="w-full sm:w-44 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 bg-white"
+              className="w-full sm:w-44 px-3 py-2 text-sm bg-white border-2 border-cocoa-300/60 rounded-xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 outline-none transition"
             >
-              <option value="all">All Difficulties</option>
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
+              <option value="all">كل المستويات</option>
+              <option value="easy">سهل</option>
+              <option value="medium">متوسط</option>
+              <option value="hard">صعب</option>
             </select>
           </div>
         </div>
       </Card>
 
-      {/* Exam Table / Cards */}
+      {/* Exam Cards */}
       {filteredExams.length === 0 ? (
         <Card className="text-center py-16">
-          <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-3">
-            <BookOpen className="w-7 h-7" />
+          <div className="w-14 h-14 bg-clay-100 text-clay-600 rounded-2xl rounded-br-md flex items-center justify-center mx-auto mb-3 -rotate-3">
+            <Code2 className="w-7 h-7" />
           </div>
-          <h3 className="text-lg font-bold text-gray-900">
-            {exams.length === 0 ? 'No Exams Created Yet' : 'No Matching Exams Found'}
+          <h3 className="text-lg font-extrabold text-ink">
+            {exams.length === 0 ? 'لسه مفيش امتحانات' : 'مفيش نتائج مطابقة'}
           </h3>
-          <p className="text-sm text-gray-500 mt-1 max-w-md mx-auto">
+          <p className="text-sm text-cocoa-500 mt-1 max-w-md mx-auto">
             {exams.length === 0
-              ? 'Start by uploading your curriculum PDF and using the AI generator to create your first grounded assessment.'
-              : 'Try clearing your search or difficulty filter.'}
+              ? 'ابدأ برفع ملف المنهج وولّد أول امتحان ذكي.'
+              : 'جرّب تغيّر البحث أو الفلتر.'}
           </p>
           {exams.length === 0 && (
             <div className="mt-5">
               <Link to="/professor/generate">
-                <Button icon={Sparkles}>Generate Assessment Now</Button>
+                <Button icon={Sparkles} className="btn-cut">ولّد امتحان دلوقتي</Button>
               </Link>
             </div>
           )}
@@ -164,33 +164,32 @@ const ExamList = () => {
               exam.max_score ||
               (exam.questions ? exam.questions.reduce((a, b) => a + (b.max_score || 1), 0) : 0);
             const dateStr = exam.created_at
-              ? new Date(exam.created_at).toLocaleDateString('en-US', {
+              ? new Date(exam.created_at).toLocaleDateString('ar-EG', {
                   month: 'short',
                   day: 'numeric',
                   year: 'numeric',
                 })
-              : 'Recent';
+              : 'حديثاً';
 
             return (
               <Card
                 key={examId || Math.random()}
-                className="flex flex-col justify-between hover:border-indigo-300 transition-all shadow-sm hover:shadow"
+                className="flex flex-col justify-between hover:border-gold-400 transition-all"
               >
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                    <span className="text-[11px] font-bold text-cocoa-300 flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5" />
                       {dateStr}
                     </span>
                     <div className="flex items-center gap-1.5 flex-wrap justify-end">
                       <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          exam.is_published
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                            : 'bg-amber-100 text-amber-800 border border-amber-300'
+                        className={`sticker !text-[10px] !py-0.5 !px-2.5 ${
+                          exam.is_published ? 'text-teal-700' : 'text-gold-600'
                         }`}
+                        style={{ borderWidth: 1.5 }}
                       >
-                        {exam.is_published ? '● Published' : '○ Draft'}
+                        {exam.is_published ? '🟢 منشور' : '✏️ مسودة'}
                       </span>
                       {exam.difficulty && (
                         <Badge type="difficulty" size="sm">
@@ -206,40 +205,40 @@ const ExamList = () => {
                   </div>
 
                   <div>
-                    <h3 className="text-base font-bold text-gray-900 line-clamp-2 hover:text-indigo-600 transition-colors">
-                      <Link to={`/professor/exams/${examId}`}>
+                    <h3 className="text-base font-extrabold text-ink line-clamp-2 hover:text-clay-600 transition-colors">
+                      <Link to={`/professor/exams/${examId}`} dir="auto">
                         {exam.title || exam.topic || `Exam #${examId}`}
                       </Link>
                     </h3>
-                    <p className="text-xs text-gray-500 mt-1 line-clamp-1">
-                      {exam.lesson_title || exam.lesson || (exam.topic && `Topic: ${exam.topic}`) || 'Curriculum Assessment'}
+                    <p className="text-xs text-cocoa-500 mt-1 line-clamp-1" dir="auto">
+                      {exam.lesson_title || exam.lesson || (exam.topic && `Topic: ${exam.topic}`) || 'امتحان من المنهج'}
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100 text-xs">
-                    <div className="flex items-center gap-1.5 text-gray-600">
-                      <Layers className="w-3.5 h-3.5 text-indigo-500" />
-                      <span>{qCount} Questions</span>
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-sand text-xs">
+                    <div className="flex items-center gap-1.5 text-cocoa-500">
+                      <Layers className="w-3.5 h-3.5 text-clay-500" />
+                      <span>{qCount} سؤال</span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-gray-600 justify-end">
-                      <Award className="w-3.5 h-3.5 text-emerald-500" />
-                      <span className="font-semibold text-gray-800">{totalPoints} Pts</span>
+                    <div className="flex items-center gap-1.5 text-cocoa-500 justify-end">
+                      <Award className="w-3.5 h-3.5 text-gold-600" />
+                      <span className="font-bold text-cocoa-800">{totalPoints} درجة</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-4 mt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+                <div className="pt-4 mt-3 border-t border-sand flex items-center justify-between gap-2">
                   <Button
                     variant={exam.is_published ? 'ghost' : 'primary'}
                     size="sm"
                     loading={togglingId === examId}
                     onClick={() => handleTogglePublish(examId, exam.is_published)}
                   >
-                    {exam.is_published ? 'Unpublish' : 'Publish to Students'}
+                    {exam.is_published ? 'إلغاء النشر' : 'انشر للطلبة'}
                   </Button>
                   <Link to={`/professor/exams/${examId}`}>
                     <Button variant="outline" size="sm" icon={Eye}>
-                      Inspect
+                      التفاصيل
                     </Button>
                   </Link>
                 </div>

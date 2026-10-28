@@ -31,8 +31,8 @@ const HomeRedirect = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <LoadingSpinner size="lg" message="Loading application..." />
+      <div className="min-h-screen flex items-center justify-center bg-cream">
+        <LoadingSpinner size="lg" message="جاري تحميل المنصة..." />
       </div>
     );
   }

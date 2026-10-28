@@ -86,6 +86,18 @@ def start_attempt(
             detail="Cannot start an attempt on an unpublished exam.",
         )
 
+    # Students may only attempt exams published by their selected professor
+    if current_user.selected_professor_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Select a professor first before starting an exam.",
+        )
+    if exam.created_by != current_user.selected_professor_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This exam belongs to a professor other than your selected professor.",
+        )
+
     attempt = ExamAttempt(
         exam_id=payload.exam_id,
         student_id=current_user.id,
@@ -139,6 +151,13 @@ def submit_attempt(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Associated exam record could not be found.",
+        )
+
+    # Re-assert professor scoping at submission time
+    if current_user.selected_professor_id is None or exam.created_by != current_user.selected_professor_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This exam belongs to a professor other than your selected professor.",
         )
 
     try:

@@ -1,6 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { getLessons, generateExam, togglePublishExam } from '../../api/client';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  getDocuments,
+  getDocumentLessons,
+  generateExam,
+  togglePublishExam,
+} from '../../api/client';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -13,19 +18,34 @@ import {
 import {
   Sparkles,
   BookOpen,
-  CheckSquare,
-  HelpCircle,
   FileCheck,
   Eye,
-  ArrowRight,
   ListOrdered,
   ChevronDown,
   Quote,
+  Library,
+  AlertTriangle,
 } from 'lucide-react';
 
+const SELECTED_DOC_KEY = 'iqyas.selectedCurriculumId';
+
+const readSelectedDocId = () => {
+  const saved = localStorage.getItem(SELECTED_DOC_KEY);
+  const parsed = saved ? Number.parseInt(saved, 10) : NaN;
+  return Number.isInteger(parsed) ? parsed : null;
+};
+
 const GenerateExam = () => {
+  // Textbook (document) state — must be selected first
+  const [documents, setDocuments] = useState([]);
+  const [loadingDocs, setLoadingDocs] = useState(true);
+  const [docsError, setDocsError] = useState('');
+  const [selectedCurriculum, setSelectedCurriculum] = useState('');
+
+  // Lessons of the selected textbook
   const [lessons, setLessons] = useState([]);
-  const [loadingLessons, setLoadingLessons] = useState(true);
+  const [loadingLessons, setLoadingLessons] = useState(false);
+  const [lessonsError, setLessonsError] = useState('');
 
   // Form states
   const [selectedLesson, setSelectedLesson] = useState('');
@@ -56,12 +76,16 @@ const GenerateExam = () => {
       setIsPublished(res.is_published);
     } catch (err) {
       console.error('Failed to publish exam:', err);
+      setError('فشل نشر الامتحان. حاول تاني.');
     } finally {
       setPublishing(false);
     }
   };
 
-  const navigate = useNavigate();
+  const selectedCurriculumId = Number.parseInt(selectedCurriculum, 10);
+  const selectedDocument = documents.find(
+    (doc) => doc.id === selectedCurriculumId
+  );
   const selectedLessonDetails = lessons.find(
     (lesson) => String(lesson.lesson_id || lesson.id) === String(selectedLesson)
   );
@@ -81,35 +105,79 @@ const GenerateExam = () => {
     )
   ).size;
   const generationWarnings = generatedExam?.warnings || [];
+  const canGenerate = Boolean(selectedCurriculum && selectedLesson);
 
+  // Load the professor's document library once; preselect the document that
+  // is already marked as the exams source in the Document Library page.
   useEffect(() => {
+    const fetchDocuments = async () => {
+      setLoadingDocs(true);
+      setDocsError('');
+      try {
+        const data = await getDocuments();
+        const list = Array.isArray(data) ? data : [];
+        setDocuments(list);
+        const savedId = readSelectedDocId();
+        if (savedId && list.some((doc) => doc.id === savedId)) {
+          setSelectedCurriculum(String(savedId));
+        } else if (list.length === 1) {
+          setSelectedCurriculum(String(list[0].id));
+        }
+      } catch (err) {
+        console.error('Failed to load document library:', err);
+        setDocsError('فشل تحميل قائمة الكتب. تأكد إن السيرفر شغال وحاول تاني.');
+      } finally {
+        setLoadingDocs(false);
+      }
+    };
+
+    fetchDocuments();
+  }, []);
+
+  // Whenever the textbook changes, drop any stale lesson selection and load
+  // only the lessons that belong to the newly selected document.
+  useEffect(() => {
+    if (!selectedCurriculum) {
+      setLessons([]);
+      setSelectedLesson('');
+      setLessonsError('');
+      return;
+    }
+
+    let cancelled = false;
     const fetchLessons = async () => {
       setLoadingLessons(true);
+      setLessonsError('');
+      setSelectedLesson('');
       try {
-        const data = await getLessons();
+        const data = await getDocumentLessons(selectedCurriculumId);
         const list = Array.isArray(data) ? data : data?.lessons || [];
+        if (cancelled) return;
         setLessons(list);
         if (list.length > 0) {
           const first = list[0];
-          const firstId = first.lesson_id || first.id || first.title || first;
-          setSelectedLesson(typeof firstId === 'object' ? firstId.lesson_id || firstId.id : String(firstId));
+          const firstId = first.lesson_id || first.id || first.title;
+          setSelectedLesson(String(firstId));
         }
       } catch (err) {
-        console.warn('Could not load lessons list:', err);
-        // Fallback default sample lessons matching indexed curriculum
-        setLessons([
-          { lesson_id: '1-1', lesson_title: '1-1 Introduction to Machine Learning' },
-          { lesson_id: '1-2', lesson_title: '1-2 Supervised vs Unsupervised Learning' },
-          { lesson_id: '2-1', lesson_title: '2-1 Linear Regression & Cost Functions' },
-        ]);
-        setSelectedLesson('1-1');
+        console.error('Failed to load lessons for document:', err);
+        if (cancelled) return;
+        setLessons([]);
+        setSelectedLesson('');
+        setLessonsError(
+          'فشل تحميل دروس الكتاب المختار. حاول تغيير الكتاب أو إعادة المحاولة.'
+        );
       } finally {
-        setLoadingLessons(false);
+        if (!cancelled) setLoadingLessons(false);
       }
     };
 
     fetchLessons();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCurriculum]);
 
   const handleTypeChange = (type) => {
     const nextState = { ...questionTypes, [type]: !questionTypes[type] };
@@ -123,9 +191,14 @@ const GenerateExam = () => {
     e.preventDefault();
     setError('');
 
+    if (!selectedCurriculum || !selectedLesson) {
+      setError('لازم تختار الكتاب والدرس الأول قبل توليد الامتحان.');
+      return;
+    }
+
     const activeTypes = Object.keys(questionTypes).filter((t) => questionTypes[t]);
     if (activeTypes.length === 0) {
-      setError('Please select at least one question type (MCQ, Short Answer, or Essay).');
+      setError('اختار نوع سؤال واحد على الأقل (اختياري / إجابة قصيرة / مقالي).');
       return;
     }
 
@@ -135,6 +208,7 @@ const GenerateExam = () => {
 
     const requestCount = Number.parseInt(numQuestions, 10) || 3;
     const payload = buildExamPayload({
+      curriculumId: selectedCurriculumId,
       title,
       selectedLesson,
       topic,
@@ -153,13 +227,14 @@ const GenerateExam = () => {
       assertRequestedQuestionCount(response, requestCount);
       setGeneratedExam(response);
       setLastRequestedCount(requestCount);
+      setIsPublished(Boolean(response.is_published));
     } catch (err) {
       console.error('Exam generation failed:', err);
       const detail =
         err.response?.data?.detail ||
         err.response?.data?.message ||
         err.message ||
-        'Exam generation failed. Check that the curriculum is indexed and the selected LLM provider is configured.';
+        'فشل توليد الامتحان. تأكد إن المنهج متفهرس وأن مزوّد الذكاء الاصطناعي متظبوط.';
       setError(typeof detail === 'string' ? detail : JSON.stringify(detail));
     } finally {
       setGenerating(false);
@@ -169,19 +244,18 @@ const GenerateExam = () => {
   return (
     <div className="max-w-5xl mx-auto space-y-8">
       {/* Title */}
-      <div>
-        <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">
-          Generate Curriculum-Grounded Exam
-        </h1>
-        <p className="text-sm text-gray-600 mt-1">
-          Specify lesson, cognitive level, and target topics. Questions are retrieved from verified vector store context with source citations.
+      <div className="relative">
+        <span className="code-chip absolute -top-3 end-0 rotate-2 hidden md:inline-block">def generate_exam(): ✨</span>
+        <h1 className="font-display text-3xl md:text-4xl text-ink">إنشاء امتحان ✨</h1>
+        <p className="text-sm text-cocoa-500 mt-1 leading-relaxed">
+          اختار الكتاب الأول، وبعدين الدرس والمستوى — الأسئلة بتتولّد بالإنجليزي من محتوى الكتاب المختار بس.
         </p>
       </div>
 
       {error && (
         <Alert
           type="error"
-          title="Generation Error"
+          title="مشكلة في التوليد"
           message={error}
           onClose={() => setError('')}
         />
@@ -189,108 +263,175 @@ const GenerateExam = () => {
 
       {/* Main Form */}
       <Card
-        title="Exam Specification"
-        subtitle="Configure the AI assessment generator"
+        title="مواصفات الامتحان"
+        subtitle="اضبط مولّد الأسئلة الذكي"
       >
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Exam Title (Optional) */}
-            <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
-                Assessment Title (Optional)
+          {/* Step 1: Textbook selection (required before lessons) */}
+          <div className="p-4 bg-gold-50/60 border-2 border-gold-300/70 rounded-2xl">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-6 h-6 rounded-lg bg-gold-500 text-ink text-xs font-extrabold flex items-center justify-center">١</span>
+              <label className="block text-[13px] font-bold text-cocoa-800">
+                الكتاب المختار (مصدر الامتحان)
               </label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., Midterm Evaluation: Chapter 2 Foundations"
-                className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-colors"
-              />
             </div>
+            {loadingDocs ? (
+              <div className="h-10 bg-sand rounded-xl animate-pulse" />
+            ) : docsError ? (
+              <Alert type="error" title="خطأ في تحميل الكتب" message={docsError} />
+            ) : documents.length === 0 ? (
+              <div className="flex items-start gap-3 p-3 bg-cream rounded-xl border border-sand">
+                <AlertTriangle className="w-5 h-5 text-gold-700 shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-bold text-cocoa-800">مفيش كتب في مكتبتك لسه.</p>
+                  <p className="text-xs text-cocoa-500 mt-1">
+                    ارفع منهج PDF الأول من{' '}
+                    <Link to="/professor/curriculum" className="font-bold text-clay-700 underline">
+                      مكتبة المناهج
+                    </Link>{' '}
+                    وبعدين ارجع هنا لتوليد الامتحان.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="relative">
+                <select
+                  value={selectedCurriculum}
+                  onChange={(e) => setSelectedCurriculum(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-sm font-bold bg-white border-2 border-gold-400 rounded-xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 appearance-none pe-10 outline-none transition"
+                  required
+                >
+                  <option value="">— اختار الكتاب —</option>
+                  {documents.map((doc) => (
+                    <option key={doc.id} value={String(doc.id)}>
+                      {doc.filename}
+                    </option>
+                  ))}
+                </select>
+                <Library className="w-4 h-4 text-gold-600 absolute left-3 top-3 pointer-events-none" />
+              </div>
+            )}
+            {selectedDocument && (
+              <p className="text-xs text-gold-700 mt-2 font-bold flex items-center gap-1.5">
+                <BookOpen className="w-3.5 h-3.5" />
+                مصدر الامتحانات الحالي: {selectedDocument.filename}
+                {Number.isInteger(selectedDocument.lesson_count) &&
+                  ` • ${selectedDocument.lesson_count} درس`}
+              </p>
+            )}
+          </div>
 
-            {/* Lesson dropdown */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
-                Curriculum Lesson / Chapter
-              </label>
-              {loadingLessons ? (
-                <div className="h-10 bg-gray-100 rounded-lg animate-pulse" />
+          {/* Step 2: Lesson selection (scoped to the selected textbook) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="md:col-span-2">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="w-6 h-6 rounded-lg bg-clay-700 text-white text-xs font-extrabold flex items-center justify-center">٢</span>
+                <label className="block text-[13px] font-bold text-cocoa-800">
+                  الدرس / الفصل من الكتاب المختار
+                </label>
+              </div>
+              {!selectedCurriculum ? (
+                <p className="text-xs text-cocoa-500 bg-cream border border-sand rounded-xl px-3.5 py-2.5">
+                  اختار الكتاب الأول وهتظهر دروسه هنا.
+                </p>
+              ) : loadingLessons ? (
+                <div className="h-10 bg-sand rounded-xl animate-pulse" />
+              ) : lessonsError ? (
+                <Alert type="error" title="خطأ في تحميل الدروس" message={lessonsError} />
+              ) : lessons.length === 0 ? (
+                <p className="text-xs text-cocoa-500 bg-cream border border-sand rounded-xl px-3.5 py-2.5">
+                  مفيش دروس متفهرسة في الكتاب ده. جرّب كتاب تاني أو أعد رفع الملف.
+                </p>
               ) : (
                 <div className="relative">
                   <select
                     value={selectedLesson}
                     onChange={(e) => setSelectedLesson(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 appearance-none bg-white pr-10"
+                    className="w-full px-3.5 py-2.5 text-sm bg-white border-2 border-cocoa-300/60 rounded-xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 appearance-none pe-10 outline-none transition"
                     required
                   >
                     {lessons.map((lesson, idx) => {
-                      const val = lesson.lesson_id || lesson.id || lesson.title || lesson;
-                      const label = lesson.lesson_title || lesson.title || lesson.name || lesson.lesson_id || lesson.id || `Lesson ${idx + 1}`;
+                      const val = lesson.lesson_id || lesson.id;
+                      const label = lesson.lesson_title || lesson.title || lesson.lesson_id || `درس ${idx + 1}`;
                       return (
-                        <option key={String(val)} value={val}>
+                        <option key={String(val)} value={String(val)}>
                           {label}
                         </option>
                       );
                     })}
                   </select>
-                  <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-3 pointer-events-none" />
+                  <ChevronDown className="w-4 h-4 text-cocoa-300 absolute left-3 top-3 pointer-events-none" />
                 </div>
               )}
             </div>
 
+            {/* Exam Title (Optional) */}
+            <div className="md:col-span-2">
+              <label className="block text-[13px] font-bold text-cocoa-800 mb-1.5">
+                عنوان الامتحان (اختياري)
+              </label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="مثال: Midterm — Chapter 2 Foundations"
+                className="w-full px-3.5 py-2.5 text-sm bg-white border-2 border-cocoa-300/60 rounded-xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 transition outline-none"
+              />
+            </div>
+
             {/* Target Topic Input */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
-                Target Topic / Focus Keyword (Optional)
+              <label className="block text-[13px] font-bold text-cocoa-800 mb-1.5">
+                الموضوع المستهدف (اختياري)
               </label>
               <input
                 type="text"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                placeholder="e.g., Cognitive taxonomies (defaults to lesson topic if blank)"
-                className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-colors"
+                placeholder="مثال: Loops & Conditionals"
+                className="w-full px-3.5 py-2.5 text-sm bg-white border-2 border-cocoa-300/60 rounded-xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 transition outline-none"
               />
             </div>
 
             {/* Difficulty select */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
-                Difficulty Level
+              <label className="block text-[13px] font-bold text-cocoa-800 mb-1.5">
+                مستوى الصعوبة
               </label>
               <select
                 value={difficulty}
                 onChange={(e) => setDifficulty(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 bg-white"
+                className="w-full px-3.5 py-2.5 text-sm bg-white border-2 border-cocoa-300/60 rounded-xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 transition outline-none"
               >
-                <option value="easy">Easy (Foundational & Definitions)</option>
-                <option value="medium">Medium (Application & Explanation)</option>
-                <option value="hard">Hard (Critical Analysis & Synthesis)</option>
+                <option value="easy">سهل (مفاهيم أساسية وتعريفات)</option>
+                <option value="medium">متوسط (تطبيق وشرح)</option>
+                <option value="hard">صعب (تحليل وتركيب نقدي)</option>
               </select>
             </div>
 
             {/* Bloom's Taxonomy Level */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
-                Bloom's Taxonomy Level
+              <label className="block text-[13px] font-bold text-cocoa-800 mb-1.5">
+                مستوى بلوم المعرفي
               </label>
               <select
                 value={bloomLevel}
                 onChange={(e) => setBloomLevel(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 bg-white"
+                className="w-full px-3.5 py-2.5 text-sm bg-white border-2 border-cocoa-300/60 rounded-xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 transition outline-none"
               >
-                <option value="remember">Remember (Recall facts and basic concepts)</option>
-                <option value="understand">Understand (Explain ideas or concepts)</option>
-                <option value="apply">Apply (Use information in new situations)</option>
-                <option value="analyze">Analyze (Draw connections among ideas)</option>
-                <option value="evaluate">Evaluate (Justify a stance or decision)</option>
-                <option value="create">Create (Produce new or original work)</option>
+                <option value="remember">تذكّر (استرجاع الحقائق)</option>
+                <option value="understand">فهم (شرح الأفكار والمفاهيم)</option>
+                <option value="apply">تطبيق (استخدام المعلومة في مواقف جديدة)</option>
+                <option value="analyze">تحليل (ربط الأفكار ببعضها)</option>
+                <option value="evaluate">تقييم (إبداء الرأي والدفاع عنه)</option>
+                <option value="create">إبداع (إنتاج عمل جديد)</option>
               </select>
             </div>
 
             {/* Number of Questions */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
-                Number of Questions (1 - 25)
+              <label className="block text-[13px] font-bold text-cocoa-800 mb-1.5">
+                عدد الأسئلة (١ - ٢٥)
               </label>
               <input
                 type="number"
@@ -298,62 +439,61 @@ const GenerateExam = () => {
                 max="25"
                 value={numQuestions}
                 onChange={(e) => setNumQuestions(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-colors"
+                className="w-full px-3.5 py-2.5 text-sm bg-white border-2 border-cocoa-300/60 rounded-xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 transition outline-none"
                 required
               />
-              <p className="text-xs text-gray-500 mt-1.5">
+              <p className="text-xs text-cocoa-500 mt-1.5">
                 {lessonChunkCount === null
-                  ? 'Lesson chunk count is unavailable.'
-                  : `${lessonChunkCount} curriculum chunks available for this lesson.`}
+                  ? 'عدد أجزاء الدرس غير متاح.'
+                  : `الدرس فيه ${lessonChunkCount} جزء متاح للتوليد.`}
               </p>
               {lessonChunkCount !== null && requestedQuestionCount > lessonChunkCount && (
-                <p className="text-xs text-amber-700 mt-1" role="alert">
-                  You requested {requestedQuestionCount} questions, but this lesson has only{' '}
-                  {lessonChunkCount} unique chunks. Some questions may need to focus on the same chunk.
+                <p className="text-xs text-gold-700 mt-1" role="alert">
+                  طلبت {requestedQuestionCount} سؤال، لكن الدرس فيه {lessonChunkCount} جزء بس — ممكن تكرر نفس الجزء في أكتر من سؤال.
                 </p>
               )}
             </div>
 
             {/* Question Types checkboxes */}
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
-                Allowed Question Types
+              <label className="block text-[13px] font-bold text-cocoa-800 mb-1.5">
+                أنواع الأسئلة المسموحة
               </label>
-              <div className="flex items-center gap-4 pt-1.5">
-                <label className="inline-flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700">
+              <div className="flex items-center gap-4 pt-1.5 flex-wrap">
+                <label className="inline-flex items-center gap-2 cursor-pointer text-sm font-bold text-cocoa-800">
                   <input
                     type="checkbox"
                     checked={questionTypes.mcq}
                     onChange={() => handleTypeChange('mcq')}
-                    className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                    className="w-4 h-4 accent-clay-700 rounded"
                   />
-                  <span>MCQ</span>
+                  <span>اختيار متعدد</span>
                 </label>
-                <label className="inline-flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700">
+                <label className="inline-flex items-center gap-2 cursor-pointer text-sm font-bold text-cocoa-800">
                   <input
                     type="checkbox"
                     checked={questionTypes.short_answer}
                     onChange={() => handleTypeChange('short_answer')}
-                    className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                    className="w-4 h-4 accent-clay-700 rounded"
                   />
-                  <span>Short Answer</span>
+                  <span>إجابة قصيرة</span>
                 </label>
-                <label className="inline-flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700">
+                <label className="inline-flex items-center gap-2 cursor-pointer text-sm font-bold text-cocoa-800">
                   <input
                     type="checkbox"
                     checked={questionTypes.essay}
                     onChange={() => handleTypeChange('essay')}
-                    className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                    className="w-4 h-4 accent-clay-700 rounded"
                   />
-                  <span>Essay</span>
+                  <span>مقالي</span>
                 </label>
               </div>
             </div>
           </div>
 
-          <div className="pt-4 border-t border-gray-100 flex items-center justify-between">
-            <p className="text-xs text-gray-500">
-              ⚡ Generation typically requires 15–45 seconds as questions undergo grounding verification.
+          <div className="pt-4 border-t border-sand flex items-center justify-between gap-4">
+            <p className="text-xs text-cocoa-500">
+              ⚡ التوليد بياخد من ١٥ لـ ٤٥ ثانية لأن الأسئلة بتتراجع ضد مصادر المنهج.
             </p>
             <Button
               type="submit"
@@ -361,8 +501,10 @@ const GenerateExam = () => {
               size="lg"
               loading={generating}
               icon={Sparkles}
+              disabled={!canGenerate}
+              className="btn-cut shrink-0"
             >
-              {generating ? 'Generating Grounded Exam...' : 'Generate Exam'}
+              {generating ? 'جاري التوليد...' : 'ولّد الامتحان'}
             </Button>
           </div>
         </form>
@@ -370,10 +512,10 @@ const GenerateExam = () => {
 
       {/* Generation in progress banner */}
       {generating && (
-        <Card className="text-center py-10 bg-indigo-50/30 border-indigo-200">
-          <LoadingSpinner size="lg" message="AI is synthesizing questions from curriculum context..." />
-          <p className="text-xs text-indigo-600 mt-2">
-            Verifying source quotes &bull; Formulating grading rubrics &bull; Formatting options
+        <Card className="text-center py-10 bg-gold-50/50 border-gold-200">
+          <LoadingSpinner size="lg" message="الذكاء الاصطناعي بيصيغ الأسئلة من محتوى المنهج..." />
+          <p className="text-xs text-gold-700 mt-2">
+            التحقق من المصادر &bull; صياغة نماذج التصحيح &bull; ترتيب الاختيارات
           </p>
         </Card>
       )}
@@ -381,19 +523,33 @@ const GenerateExam = () => {
       {/* Generated Exam Preview Section */}
       {generatedExam && (
         <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-emerald-50 border border-emerald-200 rounded-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-teal-50 border-2 border-teal-200 rounded-2xl">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-xl rounded-br-sm bg-teal-700 text-white flex items-center justify-center shrink-0 rotate-3">
                 <FileCheck className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-emerald-950">
-                  Exam Generated Successfully!
+                <h3 className="text-base font-extrabold text-teal-900">
+                  الامتحان اتولّد بنجاح! 🎉
                 </h3>
-                <p className="text-xs text-emerald-700">
-                  Requested: {lastRequestedCount} &bull; Generated: {generatedQuestions.length}{' '}
-                  &bull; Total Points: {generatedExam.total_points || 'Calculated'}
+                <p className="text-xs text-teal-700">
+                  طلبت: {lastRequestedCount} &bull; اتولّد: {generatedQuestions.length}{' '}
+                  &bull; إجمالي الدرجات: {generatedExam.total_points || '—'}
                 </p>
+                {selectedDocument && (
+                  <p className="text-xs text-teal-800 font-bold mt-0.5 flex items-center gap-1">
+                    <BookOpen className="w-3.5 h-3.5" />
+                    الكتاب: {selectedDocument.filename}
+                    {selectedLessonDetails && (
+                      <>
+                        {' '}• الدرس:{' '}
+                        {selectedLessonDetails.lesson_title ||
+                          selectedLessonDetails.title ||
+                          selectedLesson}
+                      </>
+                    )}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -403,33 +559,33 @@ const GenerateExam = () => {
                   size="sm"
                   loading={publishing}
                   onClick={handleQuickPublish}
-                  className={!isPublished ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm" : ""}
+                  className={!isPublished ? "bg-teal-700 hover:bg-teal-800 text-white shadow-sm" : ""}
                 >
-                  {isPublished ? "✓ Published to Students" : "Publish to Students Now"}
+                  {isPublished ? "✓ منشور للطلبة" : "انشر للطلبة دلوقتي"}
                 </Button>
               )}
               <Link to="/professor/exams">
                 <Button variant="secondary" size="sm">
-                  View All Exams
+                  كل الامتحانات
                 </Button>
               </Link>
               {generatedExam.id && (
                 <Link to={`/professor/exams/${generatedExam.id}`}>
                   <Button variant="outline" size="sm" icon={Eye}>
-                    Inspect Details
+                    التفاصيل
                   </Button>
                 </Link>
               )}
             </div>
           </div>
 
-          <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
+          <div className="rounded-2xl border border-sand bg-paper p-4 text-sm text-cocoa-800">
             <p>
-              Unique question texts: {uniqueQuestionCount} &bull; Unique cited chunk IDs:{' '}
+              نصوص أسئلة فريدة: {uniqueQuestionCount} &bull; أجزاء مصدر فريدة:{' '}
               {uniqueCitedChunkCount}
             </p>
             {generationWarnings.length > 0 && (
-              <ul className="mt-2 list-disc pl-5 text-amber-800" role="status">
+              <ul className="mt-2 list-disc ps-5 text-gold-700" role="status">
                 {generationWarnings.map((warning, index) => (
                   <li key={`${index}-${warning}`}>{warning}</li>
                 ))}
@@ -439,35 +595,35 @@ const GenerateExam = () => {
 
           {/* Render Question Previews */}
           <div className="space-y-4">
-            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <ListOrdered className="w-5 h-5 text-indigo-600" />
-              Generated Questions Preview
+            <h3 className="text-lg font-extrabold text-ink flex items-center gap-2">
+              <ListOrdered className="w-5 h-5 text-clay-600" />
+              معاينة الأسئلة المتولّدة
             </h3>
 
             {generatedQuestions.map((q, idx) => (
               <Card key={idx} className="p-6 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sand pb-3">
                   <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-md bg-indigo-600 text-white font-bold text-xs flex items-center justify-center">
+                    <span className="w-7 h-7 rounded-lg rounded-br-sm bg-gradient-to-b from-clay-600 to-clay-800 text-white font-bold text-xs flex items-center justify-center">
                       Q{idx + 1}
                     </span>
                     <Badge type="qtype">{q.question_type}</Badge>
                     <Badge type="difficulty">{q.difficulty || difficulty}</Badge>
                     <Badge type="bloom">{q.bloom_level || bloomLevel}</Badge>
                   </div>
-                  <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2.5 py-1 rounded-md">
-                    Max Score: {q.max_score || 1} pt(s)
+                  <span className="text-xs font-bold text-cocoa-800 bg-cream px-2.5 py-1 rounded-lg border border-sand">
+                    الدرجة: {q.max_score || 1}
                   </span>
                 </div>
 
                 {/* Question Prompt */}
                 <div>
-                  <h4 className="text-sm font-bold text-gray-900 leading-relaxed">
+                  <h4 className="text-sm font-bold text-ink leading-relaxed" dir="auto">
                     {q.question}
                   </h4>
                   {q.bloom_rationale && (
-                    <p className="text-xs text-gray-500 italic mt-1">
-                      Rationale: {q.bloom_rationale}
+                    <p className="text-xs text-cocoa-500 italic mt-1" dir="auto">
+                      السبب: {q.bloom_rationale}
                     </p>
                   )}
                 </div>
@@ -486,25 +642,26 @@ const GenerateExam = () => {
                       return (
                         <div
                           key={optIdx}
-                          className={`p-3 rounded-lg border text-xs font-medium flex items-start gap-2.5 ${
+                          className={`p-3 rounded-xl border text-xs font-bold flex items-start gap-2.5 ${
                             isCorrect
-                              ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold'
-                              : 'bg-gray-50 border-gray-200 text-gray-700'
+                              ? 'bg-teal-50 border-teal-300 text-teal-900'
+                              : 'bg-cream border-sand text-cocoa-800'
                           }`}
+                          dir="auto"
                         >
                           <span
-                            className={`w-5 h-5 rounded flex items-center justify-center shrink-0 text-[11px] font-bold ${
+                            className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 text-[11px] font-bold ${
                               isCorrect
-                                ? 'bg-emerald-600 text-white'
-                                : 'bg-gray-200 text-gray-700'
+                                ? 'bg-teal-700 text-white'
+                                : 'bg-sand text-cocoa-800'
                             }`}
                           >
                             {letter}
                           </span>
                           <span className="flex-1">{opt}</span>
                           {isCorrect && (
-                            <span className="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
-                              Correct
+                            <span className="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded">
+                              الإجابة ✓
                             </span>
                           )}
                         </div>
@@ -514,15 +671,15 @@ const GenerateExam = () => {
                 )}
 
                 {/* Reference Answer & Explanation */}
-                <div className="p-3 bg-slate-50 rounded-lg text-xs space-y-1.5 border border-slate-100">
+                <div className="p-3 bg-cream rounded-xl text-xs space-y-1.5 border border-sand">
                   <div>
-                    <span className="font-semibold text-gray-700">Reference Answer: </span>
-                    <span className="text-gray-900">{q.reference_answer || q.correct_answer}</span>
+                    <span className="font-bold text-cocoa-800">الإجابة النموذجية: </span>
+                    <span className="text-ink" dir="auto">{q.reference_answer || q.correct_answer}</span>
                   </div>
                   {q.explanation && (
                     <div>
-                      <span className="font-semibold text-gray-700">Explanation: </span>
-                      <span className="text-gray-600">{q.explanation}</span>
+                      <span className="font-bold text-cocoa-800">الشرح: </span>
+                      <span className="text-cocoa-500" dir="auto">{q.explanation}</span>
                     </div>
                   )}
                 </div>
@@ -530,32 +687,32 @@ const GenerateExam = () => {
                 {/* Rubric Table if short_answer or essay */}
                 {q.rubric && Array.isArray(q.rubric) && q.rubric.length > 0 && (
                   <div className="text-xs space-y-1.5">
-                    <span className="font-semibold text-gray-700 uppercase tracking-wider text-[11px]">
-                      Grading Rubric
+                    <span className="font-bold text-cocoa-800 text-[12px]">
+                      نموذج التصحيح
                     </span>
-                    <div className="border border-gray-200 rounded-lg overflow-hidden">
-                      <table className="w-full divide-y divide-gray-200 text-left">
-                        <thead className="bg-gray-50">
+                    <div className="border border-sand rounded-xl overflow-hidden">
+                      <table className="w-full divide-y divide-sand text-right">
+                        <thead className="bg-cream">
                           <tr>
-                            <th className="px-3 py-2 text-[11px] font-semibold text-gray-600">
-                              Criterion
+                            <th className="px-3 py-2 text-[11px] font-bold text-cocoa-500">
+                              المعيار
                             </th>
-                            <th className="px-3 py-2 text-[11px] font-semibold text-gray-600">
-                              Description
+                            <th className="px-3 py-2 text-[11px] font-bold text-cocoa-500">
+                              الوصف
                             </th>
-                            <th className="px-3 py-2 text-[11px] font-semibold text-gray-600 text-right">
-                              Points
+                            <th className="px-3 py-2 text-[11px] font-bold text-cocoa-500">
+                              الدرجات
                             </th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white">
+                        <tbody className="divide-y divide-sand bg-paper">
                           {q.rubric.map((r, rIdx) => (
                             <tr key={rIdx}>
-                              <td className="px-3 py-2 font-medium text-gray-900">
+                              <td className="px-3 py-2 font-bold text-ink" dir="auto">
                                 {r.criterion}
                               </td>
-                              <td className="px-3 py-2 text-gray-600">{r.description}</td>
-                              <td className="px-3 py-2 text-right font-bold text-indigo-600">
+                              <td className="px-3 py-2 text-cocoa-500" dir="auto">{r.description}</td>
+                              <td className="px-3 py-2 font-bold text-clay-700">
                                 {r.points}
                               </td>
                             </tr>
@@ -568,12 +725,12 @@ const GenerateExam = () => {
 
                 {/* Source Citations */}
                 {q.source_refs && q.source_refs.length > 0 && (
-                  <div className="text-xs text-gray-500 pt-1 flex items-start gap-1.5">
-                    <Quote className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
+                  <div className="text-xs text-cocoa-500 pt-1 flex items-start gap-1.5">
+                    <Quote className="w-3.5 h-3.5 text-gold-600 shrink-0 mt-0.5" />
                     <div>
-                      <span className="font-medium text-gray-700">Curriculum Grounding: </span>
+                      <span className="font-bold text-cocoa-800">مصدر من المنهج: </span>
                       {q.source_refs.map((ref, refIdx) => (
-                        <span key={refIdx} className="italic">
+                        <span key={refIdx} className="italic" dir="auto">
                           "{ref.evidence_quote || ref.source || 'Curriculum Chunk'}"{' '}
                           {ref.chunk_id && `[Chunk: ${ref.chunk_id}]`}
                         </span>
