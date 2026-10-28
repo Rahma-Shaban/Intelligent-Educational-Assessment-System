@@ -15,6 +15,7 @@ import {
   X,
   ChevronLeft,
   User as UserIcon,
+  Database,
 } from 'lucide-react';
 
 export const BrandMark = ({ size = 'md' }) => {
@@ -50,6 +51,7 @@ const Layout = () => {
     { name: 'رفع المنهج', path: '/professor/curriculum', icon: FileUp },
     { name: 'إنشاء امتحان', path: '/professor/generate', icon: Sparkles },
     { name: 'قائمة الامتحانات', path: '/professor/exams', icon: BookOpen },
+    { name: 'بنك الأسئلة', path: '/professor/question-bank', icon: Database },
     { name: 'الإحصائيات', path: '/professor/analytics', icon: BarChart3 },
   ];
 

@@ -77,6 +77,10 @@ else:
 
 # The retrieval pipeline uses local Hugging Face sentence-transformers embeddings,
 # not the OpenAI-compatible embedding IDs used for an external API client.
+# Enforce offline mode for cached Hugging Face models to prevent network hang
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 HF_EMBEDDING_MODEL_NAME = os.getenv(
     "HF_EMBEDDING_MODEL_NAME",
     "sentence-transformers/all-MiniLM-L6-v2",

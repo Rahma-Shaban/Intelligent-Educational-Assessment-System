@@ -16,6 +16,7 @@ from app.routers import (
     chatbot_router,
     curriculum_router,
     exam_router,
+    question_bank_router,
 )
 from scripts.config import LLM_PROVIDER
 from scripts.generation import validate_configuration
@@ -93,8 +94,8 @@ app.include_router(curriculum_router.router, prefix="/api/curriculum")
 app.include_router(exam_router.router, prefix="/api/exams")
 app.include_router(attempt_router.router, prefix="/api/attempts")
 app.include_router(analytics_router.router, prefix="/api/analytics")
+app.include_router(question_bank_router.router, prefix="/api")
 app.include_router(chatbot_router.router, prefix="/api/chatbot")
-
 
 @app.get(
     "/api/health",

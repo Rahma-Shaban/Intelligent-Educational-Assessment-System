@@ -178,12 +178,60 @@ export const getImprovement = async (studentId) => {
   return response.data;
 };
 
+
+// Question Bank endpoints
+export const getQuestionBank = async (params = {}) => {
+  const response = await apiClient.get('/question-bank', { params });
+  return response.data;
+};
+
+export const getQuestionBankSummary = async () => {
+  const response = await apiClient.get('/question-bank/summary');
+  return response.data;
+};
+
+export const getQuestionBankItem = async (id) => {
+  const response = await apiClient.get(`/question-bank/${id}`);
+  return response.data;
+};
+
+export const importQuestionBank = async (formData) => {
+  const response = await apiClient.post('/question-bank/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
 // Chatbot endpoint with configurable options (e.g. timeout, abort signal)
 export const sendChatMessage = async (data, config = {}) => {
   const response = await apiClient.post('/chatbot/message', data, {
     timeout: 30000,
     ...config,
   });
+  return response.data;
+};
+
+export const classifyQuestion = async (payload) => {
+  const response = await apiClient.post('/question-bank/classify', payload);
+  return response.data;
+};
+
+export const updateQuestionBankItem = async (id, patchData) => {
+  const response = await apiClient.patch(`/question-bank/${id}`, patchData);
+  return response.data;
+};
+
+export const approveQuestionBankItem = async (id, actionData = {}) => {
+  const response = await apiClient.post(`/question-bank/${id}/approve`, actionData);
+  return response.data;
+};
+
+export const rejectQuestionBankItem = async (id, actionData = {}) => {
+  const response = await apiClient.post(`/question-bank/${id}/reject`, actionData);
+  return response.data;
+};
+
+export const getLearningReadinessStats = async () => {
+  const response = await apiClient.get('/question-bank/learning-stats');
   return response.data;
 };
 

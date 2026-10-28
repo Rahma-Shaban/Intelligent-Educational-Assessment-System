@@ -17,6 +17,7 @@ import GenerateExam from './pages/professor/GenerateExam';
 import ExamList from './pages/professor/ExamList';
 import ExamDetail from './pages/professor/ExamDetail';
 import Analytics from './pages/professor/Analytics';
+import QuestionBank from './pages/professor/QuestionBank';
 
 // Student pages
 import StudentDashboard from './pages/student/Dashboard';
@@ -74,6 +75,7 @@ function App() {
             <Route path="exams" element={<ExamList />} />
             <Route path="exams/:id" element={<ExamDetail />} />
             <Route path="analytics" element={<Analytics />} />
+            <Route path="question-bank" element={<QuestionBank />} />
           </Route>
 
           {/* Student Routes (Protected: role = 'student') */}

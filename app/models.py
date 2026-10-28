@@ -189,3 +189,98 @@ class StudentCluster(Base):
 
     # Relationships
     student: Mapped["User"] = relationship("User", back_populates="cluster")
+
+
+class QuestionBankItem(Base):
+    """Persisted question bank item with full field preservation, evidence mapping, and review lifecycle."""
+
+    __tablename__ = "question_bank_items"
+
+    # --- Primary key and stable IDs ---
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
+    question_id: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    original_question_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+
+    # --- Core question fields ---
+    question_type: Mapped[str] = mapped_column(String(50), nullable=False)  # "mcq", "essay", etc.
+    question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    options_json: Mapped[str | None] = mapped_column(Text, nullable=True)     # JSON array of strings
+    correct_option: Mapped[str | None] = mapped_column(String(10), nullable=True)  # 'A','B','C','D' for MCQ
+    correct_answer: Mapped[str] = mapped_column(Text, nullable=False)          # model answer text
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # --- Curriculum & Source Metadata ---
+    subject: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    curriculum_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    unit: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    chapter: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    lesson: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    page_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source_file: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    answer_source: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    verification_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source_metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: extra fields
+    validation_warnings_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
+
+    # --- Classification & Psychometric Analysis ---
+    bloom_level: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    difficulty: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    learning_objective: Mapped[str | None] = mapped_column(Text, nullable=True)
+    learning_objective_grounded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    classification_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    classification_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    analysis_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    classification_method: Mapped[str | None] = mapped_column(String(100), nullable=True, default="rag_llm")
+    model_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # --- Source Evidence & Grounding ---
+    source_chunk_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of chunk IDs
+    source_evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    curriculum_mapping_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # full mapping dict
+    original_source_metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # --- Review & Approval Lifecycle ---
+    # Allowed: "pending_review", "approved", "rejected", "needs_review"
+    classification_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="pending_review", index=True
+    )
+    review_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="pending_review", index=True
+    )
+    needs_teacher_review: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    review_reasons_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    # --- Incremental Learning from Teacher Approvals ---
+    teacher_corrections_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # proposed vs approved diff
+
+    # --- Duplicate Detection ---
+    is_duplicate_candidate: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    duplicate_of_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    duplicate_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    duplicate_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # --- Question Bank Embedding Sync ---
+    embedding_id: Mapped[str | None] = mapped_column(String(200), unique=True, nullable=True, index=True)
+    embedding_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="pending", index=True
+    )  # "pending" | "synced" | "failed"
+    embedding_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # --- Timestamps ---
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    imported_from: Mapped[str | None] = mapped_column(String(500), nullable=True)
