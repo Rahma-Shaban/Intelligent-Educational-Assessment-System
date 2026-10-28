@@ -156,6 +156,7 @@ class ExamListItem(BaseModel):
     total_points: float
     question_count: int
     is_published: bool = False
+    is_practice: bool = False
     created_at: datetime
     curriculum_id: int | None = None
 
@@ -174,6 +175,7 @@ class ExamResponse(BaseModel):
     total_points: float
     question_count: int
     is_published: bool = False
+    is_practice: bool = False
     created_at: datetime
     curriculum_id: int | None = None
     questions: list[dict[str, Any]] | None = None
@@ -259,6 +261,8 @@ class AttemptResponse(BaseModel):
     percentage: float | None = None
     graded_answers: list[dict[str, Any]] | dict[str, Any] | None = None
     exam_title: str | None = None
+    is_practice: bool = False
+    lesson_id: str | None = None
 
 
 # ==============================================================================
@@ -293,3 +297,79 @@ class ProfessorDashboardResponse(BaseModel):
     class_analytics: dict[str, Any]
     clusters: list[ClusterResponse]
     summary: dict[str, Any]
+
+
+
+# ==============================================================================
+# Student Improvement Schemas
+# ==============================================================================
+
+
+class PracticeSettings(BaseModel):
+    """Practice exam settings chosen by the backend from the student's level."""
+
+    difficulty: str
+    bloom_level: str
+    question_types: list[str]
+    number_of_questions: int
+    level: str | None = None
+
+
+class WeakLessonItem(BaseModel):
+    """Per-lesson diagnosis built from the student's real (non-practice) attempts."""
+
+    lesson_id: str
+    lesson_title: str
+    total_questions: int
+    questions_wrong: int
+    accuracy_pct: float
+    attempts_count: int
+    last_attempt_at: str | None = None
+    trend: str = "unknown"
+    status: str
+    sample_wrong_questions: list[dict[str, Any]] = Field(default_factory=list)
+    suggested_practice: PracticeSettings | None = None
+    practice_available: bool = False
+    practice_unavailable_reason: str | None = None
+
+
+class PracticeScore(BaseModel):
+    attempt_id: int | None = None
+    exam_id: int | None = None
+    submitted_at: str | None = None
+    percentage: float
+    difficulty: str | None = None
+
+
+class PracticeHistoryItem(BaseModel):
+    """Practice attempts of one lesson over time (oldest -> newest)."""
+
+    lesson_id: str
+    lesson_title: str
+    practice_count: int
+    best_percentage: float
+    latest_percentage: float
+    trend: str
+    scores: list[PracticeScore] = Field(default_factory=list)
+
+
+class ImprovementResponse(BaseModel):
+    """Student Improvement page payload."""
+
+    student_id: int
+    student_level: str | None = None
+    overall_accuracy: float | None = None
+    real_attempts_count: int = 0
+    lessons: list[WeakLessonItem] = Field(default_factory=list)
+    practice_history: list[PracticeHistoryItem] = Field(default_factory=list)
+
+
+class PracticeExamRequest(BaseModel):
+    """Request a personal practice exam for one lesson (Student only)."""
+
+    lesson_id: str = Field(..., min_length=1, max_length=100)
+    number_of_questions: int = Field(default=5, ge=3, le=10)
+    question_types: list[str] | None = Field(
+        default=None,
+        description="Optional override; allowed: 'mcq', 'short_answer', 'essay'",
+    )

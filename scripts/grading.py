@@ -356,7 +356,8 @@ def grade_exam_submission(
         if "weaknesses" in grade_res:
             entry["weaknesses"] = grade_res["weaknesses"]
 
-        for meta_key in ("topic", "difficulty", "bloom_level"):
+        # lesson_id lets the improvement module map each answer to a curriculum lesson
+        for meta_key in ("topic", "difficulty", "bloom_level", "lesson_id"):
             val = question.get(meta_key) or exam.get(meta_key)
             if val is not None:
                 entry[meta_key] = val

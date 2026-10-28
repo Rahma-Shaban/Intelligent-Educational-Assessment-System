@@ -31,6 +31,7 @@ class User(Base):
     exams: Mapped[list["Exam"]] = relationship(
         "Exam",
         back_populates="creator",
+        foreign_keys="Exam.created_by",
         cascade="all, delete-orphan",
     )
     attempts: Mapped[list["ExamAttempt"]] = relationship(
@@ -102,6 +103,13 @@ class Exam(Base):
     exam_json: Mapped[str] = mapped_column(Text, nullable=False)
     total_points: Mapped[float] = mapped_column(Float, nullable=False)
     is_published: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Student Improvement: personal practice exams are hidden from exam lists and analytics
+    is_practice: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    practice_for_student_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     created_by: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -114,7 +122,7 @@ class Exam(Base):
     )
 
     # Relationships
-    creator: Mapped["User"] = relationship("User", back_populates="exams")
+    creator: Mapped["User"] = relationship("User", back_populates="exams", foreign_keys=[created_by])
     curriculum: Mapped[Optional["Curriculum"]] = relationship("Curriculum", back_populates="exams")
     attempts: Mapped[list["ExamAttempt"]] = relationship(
         "ExamAttempt",

@@ -52,6 +52,12 @@ def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
     migrations = [
         ("exams", "is_published", "ALTER TABLE exams ADD COLUMN is_published BOOLEAN DEFAULT 0"),
+        ("exams", "is_practice", "ALTER TABLE exams ADD COLUMN is_practice BOOLEAN NOT NULL DEFAULT 0"),
+        (
+            "exams",
+            "practice_for_student_id",
+            "ALTER TABLE exams ADD COLUMN practice_for_student_id INTEGER REFERENCES users(id)",
+        ),
         (
             "curriculums",
             "professor_id",
