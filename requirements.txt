@@ -24,3 +24,10 @@ httpx
 
 # Machine learning (analytics)
 scikit-learn
+matplotlib
+
+# Evaluation & Observability
+ragas
+langsmith
+langchain-community==0.3.31
+langchain-openai
