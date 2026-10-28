@@ -25,7 +25,7 @@ try:
 except ImportError:
     OUTPUTS_DIR = os.path.join(os.path.dirname(__file__), "..", "outputs")
 
-MODEL_PATH = os.path.join(OUTPUTS_DIR, "student_cluster_pipeline.pkl")
+MODEL_PATH = os.path.join(OUTPUTS_DIR, "student_cluster_pipeline1.pkl")
 
 
 # ==========================================
@@ -88,7 +88,7 @@ class StudentAnalyticsEngine:
     def classify_students_dataframe(self, df_features: pd.DataFrame) -> pd.DataFrame:
         """تصنيف دفعة كاملة من الطلاب دفعة واحدة (Batch Re-classification)."""
         df = df_features.copy()
-        
+
         # التأكد من ملء أي قيم مفقودة وترتيب الأعمدة بدقة
         X = df[self.features].fillna(0)
         X_scaled = self.scaler.transform(X)
@@ -180,7 +180,9 @@ def build_feature_matrix(
             continue
 
         raw_id = (
-            attempt.get("student_id")
+            attempt.get("student_phone")
+            or attempt.get("phone")
+            or attempt.get("student_id")
             or attempt.get("student_name")
             or attempt.get("user_id")
             or "unknown"
@@ -369,7 +371,9 @@ def get_class_analytics(attempts: list[dict[str, Any]]) -> dict[str, Any]:
             continue
 
         raw_id = (
-            attempt.get("student_id")
+            attempt.get("student_phone")
+            or attempt.get("phone")
+            or attempt.get("student_id")
             or attempt.get("student_name")
             or attempt.get("user_id")
         )

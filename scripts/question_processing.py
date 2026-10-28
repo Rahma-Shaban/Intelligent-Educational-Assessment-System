@@ -156,10 +156,16 @@ def parse_question_source(
         if not fmt:
             # Guess format from header magic or text content
             stripped = source.strip()
-            if stripped.startswith(b"{") or stripped.startswith(b"["):
+            if stripped.startswith(b"%PDF"):
+                fmt = "pdf"
+            elif stripped.startswith(b"{") or stripped.startswith(b"["):
                 fmt = "json"
             elif stripped.startswith(b"PK"):
-                fmt = "xlsx"
+                # Could be docx or xlsx; check magic strings or default to xlsx
+                if b"word/" in source[:2000]:
+                    fmt = "docx"
+                else:
+                    fmt = "xlsx"
             else:
                 fmt = "csv"
         return _parse_from_stream(io.BytesIO(source), fmt)
@@ -197,7 +203,187 @@ def parse_question_source(
             data = json.load(f)
         return _normalize_json_data(data)
 
-    raise ValueError(f"Unsupported question source file format: '{fmt}' (from {path})")
+    if fmt == "pdf":
+        with open(path, "rb") as f:
+            return _parse_from_stream(f, "pdf")
+
+    if fmt == "docx":
+        with open(path, "rb") as f:
+            return _parse_from_stream(f, "docx")
+
+    raise ValueError(
+        f"Unsupported question source file format: '{fmt}' (from {path}). "
+        f"Supported formats are: XLSX, XLS, CSV, JSON, PDF, DOCX."
+    )
+
+
+def _extract_text_from_pdf_stream(stream: Any) -> str:
+    """Extract full text from a PDF stream using PyMuPDF (fitz) or pypdf."""
+    content = stream.read() if hasattr(stream, "read") else stream
+    try:
+        import fitz  # PyMuPDF
+        doc = fitz.open(stream=content, filetype="pdf")
+        pages_text = [page.get_text() for page in doc]
+        doc.close()
+        return "\n".join(pages_text)
+    except ImportError:
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(io.BytesIO(content))
+            return "\n".join([p.extract_text() or "" for p in reader.pages])
+        except ImportError:
+            raise RuntimeError(
+                "PDF parsing requires 'pymupdf' or 'pypdf' installed in the environment."
+            )
+
+
+def _extract_text_from_docx_stream(stream: Any) -> str:
+    """Extract full text from a DOCX stream using standard zipfile XML parsing or python-docx."""
+    if hasattr(stream, "read"):
+        content = stream.read()
+    else:
+        content = stream
+
+    # Standard python zipfile reader for word/document.xml
+    import zipfile
+    import xml.etree.ElementTree as ET
+    bio = io.BytesIO(content) if isinstance(content, bytes) else content
+    try:
+        with zipfile.ZipFile(bio) as zf:
+            if "word/document.xml" not in zf.namelist():
+                raise ValueError("Invalid DOCX format: missing word/document.xml")
+            xml_data = zf.read("word/document.xml")
+        tree = ET.fromstring(xml_data)
+        paragraphs: list[str] = []
+        for p in tree.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p"):
+            texts = [
+                node.text
+                for node in p.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t")
+                if node.text
+            ]
+            if texts:
+                paragraphs.append("".join(texts))
+        return "\n".join(paragraphs)
+    except Exception as exc:
+        logger.warning("Standard XML docx extraction failed, trying python-docx: %s", exc)
+        try:
+            import docx
+            doc = docx.Document(bio)
+            return "\n".join([p.text for p in doc.paragraphs if p.text])
+        except Exception:
+            raise ValueError(f"Could not parse DOCX document: {exc}")
+
+
+def parse_questions_from_text(text: str, source_name: str = "document") -> list[dict[str, Any]]:
+    """
+    Parses unformatted or structured question document text (from PDF, DOCX, TXT)
+    into standard raw question dictionaries with stem, options, answers, and explanations.
+    """
+    if not text or not text.strip():
+        return []
+
+    # Normalize line breaks
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    # Split into question blocks: match patterns like "1.", "Question 1:", "Q1.", etc.
+    split_pattern = r"(?=(?:^|\n)\s*(?:Question\s*\d+|Q\d+|\d+[\.\)])\s+)"
+    chunks = re.split(split_pattern, normalized)
+    records: list[dict[str, Any]] = []
+
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        lines = [line.strip() for line in chunk.split("\n") if line.strip()]
+        if not lines:
+            continue
+
+        header_match = re.match(
+            r"^(?:Question\s*(\d+)|Q(\d+)|(\d+)[\.\)])\s*(.*)", lines[0], re.IGNORECASE
+        )
+        q_num = None
+        stem_start = lines[0]
+        if header_match:
+            q_num = header_match.group(1) or header_match.group(2) or header_match.group(3)
+            stem_start = header_match.group(4) or ""
+
+        stem_lines = [stem_start] if stem_start else []
+        options: dict[str, str] = {}
+        correct_answer = ""
+        correct_option: Optional[str] = None
+        explanation = ""
+
+        current_opt: Optional[str] = None
+        in_answer = False
+        in_explanation = False
+
+        for line in lines[1:]:
+            ans_match = re.match(
+                r"^(?:Answer|Correct\s*Answer|Model\s*Answer):\s*(.*)", line, re.IGNORECASE
+            )
+            if ans_match:
+                in_answer = True
+                in_explanation = False
+                current_opt = None
+                val = ans_match.group(1).strip()
+                if re.match(r"^[A-D]$", val, re.IGNORECASE):
+                    correct_option = val.upper()
+                else:
+                    correct_answer = val
+                continue
+
+            exp_match = re.match(r"^(?:Explanation|Reasoning):\s*(.*)", line, re.IGNORECASE)
+            if exp_match:
+                in_explanation = True
+                in_answer = False
+                current_opt = None
+                explanation = exp_match.group(1).strip()
+                continue
+
+            opt_match = re.match(r"^([A-D])[\.\)]\s*(.*)", line, re.IGNORECASE)
+            if opt_match:
+                in_answer = False
+                in_explanation = False
+                current_opt = opt_match.group(1).upper()
+                options[current_opt] = opt_match.group(2).strip()
+                continue
+
+            if current_opt:
+                options[current_opt] += " " + line
+            elif in_answer:
+                correct_answer += " " + line
+            elif in_explanation:
+                explanation += " " + line
+            else:
+                stem_lines.append(line)
+
+        stem = " ".join(stem_lines).strip()
+        if not stem:
+            continue
+
+        q_type = (
+            "mcq"
+            if len(options) >= 2
+            else ("essay" if len(correct_answer) > 40 else "short_answer")
+        )
+        if correct_option and not correct_answer and correct_option in options:
+            correct_answer = options[correct_option]
+
+        rec: dict[str, Any] = {
+            "question_id": f"DOC-Q{q_num}" if q_num else f"DOC-Q{len(records) + 1}",
+            "question_text": stem,
+            "question_type": q_type,
+            "option_A": options.get("A"),
+            "option_B": options.get("B"),
+            "option_C": options.get("C"),
+            "option_D": options.get("D"),
+            "correct_option": correct_option,
+            "correct_answer": correct_answer,
+            "explanation": explanation if explanation else None,
+            "source_file": source_name,
+        }
+        records.append(rec)
+
+    return records
 
 
 def _parse_from_stream(stream: Any, fmt: str) -> list[dict[str, Any]]:
@@ -228,7 +414,29 @@ def _parse_from_stream(stream: Any, fmt: str) -> list[dict[str, Any]]:
             data = json.load(stream)
         return _normalize_json_data(data)
 
-    raise ValueError(f"Unsupported stream format: '{fmt}'")
+    if fmt == "pdf":
+        text = _extract_text_from_pdf_stream(stream)
+        parsed = parse_questions_from_text(text, source_name="uploaded_pdf")
+        if not parsed:
+            raise ValueError(
+                "Could not extract any structured questions from the uploaded PDF. "
+                "Ensure questions are formatted with clear numbering (e.g. '1. ...') and options/answers."
+            )
+        return parsed
+
+    if fmt == "docx":
+        text = _extract_text_from_docx_stream(stream)
+        parsed = parse_questions_from_text(text, source_name="uploaded_docx")
+        if not parsed:
+            raise ValueError(
+                "Could not extract any structured questions from the uploaded DOCX document. "
+                "Ensure questions are formatted with clear numbering (e.g. '1. ...') and options/answers."
+            )
+        return parsed
+
+    raise ValueError(
+        f"Unsupported stream format: '{fmt}'. Supported formats are: XLSX, XLS, CSV, JSON, PDF, DOCX."
+    )
 
 
 def _normalize_json_data(data: Any) -> list[dict[str, Any]]:

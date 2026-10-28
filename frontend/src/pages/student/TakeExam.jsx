@@ -13,8 +13,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   Send,
-  ChevronLeft,
   ChevronRight,
+  ChevronLeft,
   HelpCircle,
   FileText,
   Check,
@@ -74,7 +74,7 @@ const TakeExam = () => {
         const detail =
           err.response?.data?.detail ||
           err.response?.data?.message ||
-          'Could not start an exam attempt. Make sure you are logged in as a student.';
+          'معرفناش نبدأ محاولة. تأكد إنك مسجّل دخول كطالب.';
         setSubmitError(typeof detail === 'string' ? detail : JSON.stringify(detail));
         setSubmitting(false);
         isSubmittingRef.current = false;
@@ -103,7 +103,7 @@ const TakeExam = () => {
       const detail =
         err.response?.data?.detail ||
         err.response?.data?.message ||
-        'Error submitting answers. Please try again.';
+        'حصلت مشكلة في التسليم، حاول تاني.';
       setSubmitError(typeof detail === 'string' ? detail : JSON.stringify(detail));
       setSubmitting(false);
       isSubmittingRef.current = false;
@@ -135,7 +135,7 @@ const TakeExam = () => {
         }
       } catch (err) {
         console.error('Failed to load exam:', err);
-        setError('Failed to load this assessment. It may not exist or the backend is offline.');
+        setError('معرفناش نحمّل الامتحان ده. يمكن مش موجود أو السيرفر واقف.');
       } finally {
         setLoading(false);
       }
@@ -168,7 +168,7 @@ const TakeExam = () => {
   // Handle auto-submit safely when timer reaches zero
   useEffect(() => {
     if (remainingSeconds === 0 && !loading && exam && !isSubmittingRef.current) {
-      alert('Time has expired! Submitting your answers automatically now.');
+      alert('خلص الوقت! بنسلّم إجاباتك تلقائياً دلوقتي.');
       doSubmit();
     }
   }, [remainingSeconds, loading, exam, doSubmit]);
@@ -188,14 +188,14 @@ const TakeExam = () => {
   const currentQuestion = exam?.questions ? exam.questions[currentIndex] : null;
 
   if (loading) {
-    return <LoadingSpinner size="lg" message="Preparing assessment and timer..." />;
+    return <LoadingSpinner size="lg" message="بنجهّز الامتحان والمؤقّت..." />;
   }
 
   if (error || !exam) {
     return (
       <div className="max-w-2xl mx-auto space-y-4">
-        <Alert type="error" title="Assessment Unavailable" message={error} />
-        <Button onClick={() => navigate('/student/exams')}>Return to Exams List</Button>
+        <Alert type="error" title="الامتحان غير متاح" message={error} />
+        <Button onClick={() => navigate('/student/exams')} className="btn-cut">ارجع لقائمة الامتحانات</Button>
       </div>
     );
   }
@@ -203,31 +203,34 @@ const TakeExam = () => {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Top Bar with Timer and Progress */}
-      <div className="sticky top-16 z-20 bg-white/95 backdrop-blur-md border border-gray-200/90 rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-4">
+      <div className="sticky top-16 z-20 bg-paper/95 backdrop-blur-md border border-sand rounded-2xl p-4 shadow-warm flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-base font-bold text-gray-900 line-clamp-1">
+          <h2 className="text-base font-extrabold text-ink line-clamp-1" dir="auto">
             {exam.title || exam.topic || `Assessment #${id}`}
           </h2>
-          <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
+          <div className="flex items-center gap-3 text-xs text-cocoa-500 mt-0.5">
             <span>
-              Progress: <strong>{answeredCount}</strong> of <strong>{totalQuestions}</strong> answered
+              جاوبت على <strong className="text-teal-700">{answeredCount}</strong> من{' '}
+              <strong>{totalQuestions}</strong>
             </span>
             <span>&bull;</span>
-            <span className="capitalize">{exam.difficulty} difficulty</span>
+            <span className="font-bold">
+              {exam.difficulty === 'easy' ? 'سهل' : exam.difficulty === 'hard' ? 'صعب' : 'متوسط'}
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {/* Live Timer Indicator */}
           <div
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-mono text-sm font-bold border transition-colors ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-code text-sm font-bold border-2 transition-colors ${
               remainingSeconds < 300
                 ? 'bg-rose-50 text-rose-700 border-rose-300 animate-pulse'
-                : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                : 'bg-gold-50 text-gold-700 border-gold-300'
             }`}
           >
             <Clock className="w-4 h-4" />
-            <span>{formatTimer(remainingSeconds)}</span>
+            <span dir="ltr">{formatTimer(remainingSeconds)}</span>
           </div>
 
           <Button
@@ -235,8 +238,9 @@ const TakeExam = () => {
             size="md"
             icon={Send}
             onClick={() => setShowConfirmModal(true)}
+            className="btn-cut"
           >
-            Finish &amp; Submit
+            سلّم الامتحان
           </Button>
         </div>
       </div>
@@ -244,7 +248,7 @@ const TakeExam = () => {
       {submitError && <Alert type="error" message={submitError} onClose={() => setSubmitError('')} />}
 
       {/* Question Navigation Tabs */}
-      <div className="bg-white p-3 rounded-xl border border-gray-200/80 flex items-center gap-2 overflow-x-auto">
+      <div className="bg-paper p-3 rounded-2xl border border-sand flex items-center gap-2 overflow-x-auto">
         {exam.questions?.map((_, idx) => {
           const isAnswered =
             answers[idx] !== undefined && String(answers[idx]).trim().length > 0;
@@ -255,12 +259,12 @@ const TakeExam = () => {
               key={idx}
               type="button"
               onClick={() => setCurrentIndex(idx)}
-              className={`w-9 h-9 rounded-lg font-bold text-xs flex items-center justify-center transition-all shrink-0 ${
+              className={`w-9 h-9 rounded-xl font-bold text-xs flex items-center justify-center transition-all shrink-0 ${
                 isCurrent
-                  ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-300'
+                  ? 'bg-gradient-to-b from-clay-600 to-clay-800 text-white shadow-warm ring-2 ring-gold-300 -rotate-3'
                   : isAnswered
-                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-transparent'
+                  ? 'bg-teal-100 text-teal-800 border border-teal-300'
+                  : 'bg-sand text-cocoa-500 hover:bg-cocoa-100 border border-transparent'
               }`}
             >
               {idx + 1}
@@ -273,9 +277,9 @@ const TakeExam = () => {
       {currentQuestion && (
         <Card className="p-6 md:p-8 space-y-6">
           {/* Question Header */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-sand pb-4">
             <div className="flex items-center gap-2.5">
-              <span className="w-8 h-8 rounded-lg bg-indigo-600 text-white font-bold text-sm flex items-center justify-center">
+              <span className="w-9 h-9 rounded-xl rounded-br-sm bg-gradient-to-b from-clay-600 to-clay-800 text-gold-300 font-display text-sm flex items-center justify-center">
                 Q{currentIndex + 1}
               </span>
               <Badge type="qtype">{currentQuestion.question_type}</Badge>
@@ -283,13 +287,13 @@ const TakeExam = () => {
                 <Badge type="bloom">{currentQuestion.bloom_level}</Badge>
               )}
             </div>
-            <span className="text-xs font-semibold text-gray-500 bg-gray-50 px-3 py-1 rounded-md border border-gray-200">
-              Worth: {currentQuestion.max_score || 1} point(s)
+            <span className="text-xs font-bold text-cocoa-800 bg-cream px-3 py-1 rounded-lg border border-sand">
+              الدرجة: {currentQuestion.max_score || 1}
             </span>
           </div>
 
           {/* Question Prompt */}
-          <div className="text-gray-900 text-base md:text-lg font-semibold leading-relaxed">
+          <div className="text-ink text-base md:text-lg font-bold leading-relaxed" dir="auto">
             {currentQuestion.question}
           </div>
 
@@ -298,8 +302,8 @@ const TakeExam = () => {
             {/* 1. Multiple Choice (MCQ) */}
             {currentQuestion.question_type === 'mcq' && currentQuestion.options && (
               <div className="space-y-2.5">
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-                  Select the best answer:
+                <p className="text-xs font-bold text-cocoa-500 mb-2">
+                  اختار الإجابة الصح:
                 </p>
                 {currentQuestion.options.map((option, optIdx) => {
                   const letter = String.fromCharCode(65 + optIdx);
@@ -309,11 +313,12 @@ const TakeExam = () => {
                     <label
                       key={optIdx}
                       onClick={() => handleSelectAnswer(currentIndex, letter)}
-                      className={`flex items-center gap-3 p-4 rounded-xl border text-sm font-medium cursor-pointer transition-all ${
+                      className={`flex items-center gap-3 p-4 rounded-2xl border-2 text-sm font-bold cursor-pointer transition-all ${
                         isChecked
-                          ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 shadow-sm ring-1 ring-indigo-500'
-                          : 'border-gray-200 hover:border-gray-300 bg-white text-gray-700'
+                          ? 'border-clay-600 bg-clay-50 text-clay-950 shadow-warm ring-1 ring-gold-400'
+                          : 'border-sand hover:border-cocoa-300 bg-paper text-cocoa-800'
                       }`}
+                      dir="auto"
                     >
                       <input
                         type="radio"
@@ -324,10 +329,10 @@ const TakeExam = () => {
                         className="hidden"
                       />
                       <span
-                        className={`w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold border transition-colors ${
+                        className={`w-7 h-7 rounded-lg rounded-br-sm flex items-center justify-center text-xs font-bold border transition-colors ${
                           isChecked
-                            ? 'bg-indigo-600 border-indigo-600 text-white'
-                            : 'border-gray-300 text-gray-600 bg-gray-50'
+                            ? 'bg-gradient-to-b from-clay-600 to-clay-800 border-clay-700 text-white'
+                            : 'border-cocoa-300/60 text-cocoa-500 bg-cream'
                         }`}
                       >
                         {letter}
@@ -342,15 +347,16 @@ const TakeExam = () => {
             {/* 2. Short Answer */}
             {currentQuestion.question_type === 'short_answer' && (
               <div className="space-y-2">
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
-                  Your Answer (Concise Explanation):
+                <label className="block text-xs font-bold text-cocoa-500">
+                  إجابتك (شرح مختصر):
                 </label>
                 <input
                   type="text"
-                  placeholder="Type your response here..."
+                  placeholder="اكتب إجابتك هنا..."
                   value={answers[currentIndex] || ''}
                   onChange={(e) => handleSelectAnswer(currentIndex, e.target.value)}
-                  className="w-full p-3.5 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600"
+                  className="w-full p-3.5 text-sm bg-white border-2 border-cocoa-300/60 rounded-2xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 outline-none transition"
+                  dir="auto"
                 />
               </div>
             )}
@@ -359,38 +365,39 @@ const TakeExam = () => {
             {currentQuestion.question_type === 'essay' && (
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
-                    Your Essay Answer:
+                  <label className="block text-xs font-bold text-cocoa-500">
+                    إجابتك المقالية:
                   </label>
-                  <span className="text-[11px] text-gray-400">
-                    Supports Markdown formatting
+                  <span className="text-[11px] text-cocoa-300">
+                    يدعم تنسيق Markdown
                   </span>
                 </div>
                 <textarea
                   rows={8}
-                  placeholder="Elaborate your explanation here. Cite principles from the curriculum where applicable..."
+                  placeholder="اشرح إجابتك بالتفصيل، واستشهد بمفاهيم من المنهج لو أمكن..."
                   value={answers[currentIndex] || ''}
                   onChange={(e) => handleSelectAnswer(currentIndex, e.target.value)}
-                  className="w-full p-4 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 font-sans leading-relaxed"
+                  className="w-full p-4 text-sm bg-white border-2 border-cocoa-300/60 rounded-2xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 outline-none leading-relaxed transition"
+                  dir="auto"
                 />
               </div>
             )}
           </div>
 
           {/* Bottom Pagination Controls */}
-          <div className="pt-6 border-t border-gray-100 flex items-center justify-between">
+          <div className="pt-6 border-t border-sand flex items-center justify-between">
             <Button
               variant="secondary"
               size="md"
               disabled={currentIndex === 0}
               onClick={() => setCurrentIndex((prev) => prev - 1)}
-              icon={ChevronLeft}
+              icon={ChevronRight}
             >
-              Previous
+              السابق
             </Button>
 
-            <span className="text-xs font-medium text-gray-500">
-              Question {currentIndex + 1} of {totalQuestions}
+            <span className="text-xs font-bold text-cocoa-500">
+              سؤال {currentIndex + 1} من {totalQuestions}
             </span>
 
             {currentIndex < totalQuestions - 1 ? (
@@ -398,8 +405,9 @@ const TakeExam = () => {
                 variant="primary"
                 size="md"
                 onClick={() => setCurrentIndex((prev) => prev + 1)}
+                className="btn-cut"
               >
-                Next Question &rarr;
+                السؤال اللي بعده
               </Button>
             ) : (
               <Button
@@ -407,8 +415,9 @@ const TakeExam = () => {
                 size="md"
                 icon={Send}
                 onClick={() => setShowConfirmModal(true)}
+                className="btn-cut"
               >
-                Review &amp; Submit
+                راجع وسلّم
               </Button>
             )}
           </div>
@@ -419,8 +428,8 @@ const TakeExam = () => {
       <Modal
         isOpen={showConfirmModal}
         onClose={() => setShowConfirmModal(false)}
-        title="Confirm Assessment Submission"
-        subtitle="Please review your completion status before finalizing"
+        title="تأكيد تسليم الامتحان"
+        subtitle="راجع حالة إجاباتك قبل ما تسلّم نهائياً"
         footer={
           <>
             <Button
@@ -429,8 +438,9 @@ const TakeExam = () => {
               loading={submitting}
               onClick={doSubmit}
               icon={Send}
+              className="btn-cut"
             >
-              Confirm and Submit
+              أكيد، سلّم
             </Button>
             <Button
               variant="secondary"
@@ -438,46 +448,46 @@ const TakeExam = () => {
               disabled={submitting}
               onClick={() => setShowConfirmModal(false)}
             >
-              Continue Exam
+              كمّل امتحان
             </Button>
           </>
         }
       >
         <div className="space-y-4 text-sm">
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+          <div className="p-4 bg-cream rounded-2xl border border-sand space-y-2">
             <div className="flex justify-between">
-              <span className="text-gray-600">Total Questions:</span>
-              <span className="font-bold text-gray-900">{totalQuestions}</span>
+              <span className="text-cocoa-500 font-bold">إجمالي الأسئلة:</span>
+              <span className="font-bold text-ink">{totalQuestions}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">Answered Questions:</span>
-              <span className="font-bold text-emerald-600">{answeredCount}</span>
+              <span className="text-cocoa-500 font-bold">إجابت عليها:</span>
+              <span className="font-bold text-teal-700">{answeredCount}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">Unanswered Questions:</span>
+              <span className="text-cocoa-500 font-bold">لسه فاضل:</span>
               <span className="font-bold text-rose-600">
                 {totalQuestions - answeredCount}
               </span>
             </div>
-            <div className="flex justify-between border-t border-gray-200 pt-2">
-              <span className="text-gray-600">Time Remaining:</span>
-              <span className="font-mono font-bold text-indigo-600">
+            <div className="flex justify-between border-t border-sand pt-2">
+              <span className="text-cocoa-500 font-bold">الوقت المتبقي:</span>
+              <span className="font-code font-bold text-clay-700" dir="ltr">
                 {formatTimer(remainingSeconds)}
               </span>
             </div>
           </div>
 
           {answeredCount < totalQuestions && (
-            <div className="flex items-start gap-2.5 p-3 bg-amber-50 rounded-lg text-amber-800 text-xs border border-amber-200">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2.5 p-3 bg-gold-50 rounded-xl text-gold-800 text-xs border border-gold-200">
+              <AlertTriangle className="w-4 h-4 text-gold-600 shrink-0 mt-0.5" />
               <span>
-                You have {totalQuestions - answeredCount} unanswered question(s). You can still submit now, but unattempted questions will receive 0 points.
+                عندك {totalQuestions - answeredCount} سؤال لسه فاضي. تقدر تسلّم دلوقتي، لكن الأسئلة الفاضية هتاخد صفر.
               </span>
             </div>
           )}
 
-          <p className="text-xs text-gray-500">
-            Once submitted, your answers will be evaluated semantically by our AI engine against the rubric criteria.
+          <p className="text-xs text-cocoa-500">
+            بعد التسليم، إجاباتك هتتقيّم ذكائياً حسب معايير التصحيح — والنتيجة تظهر فوراً.
           </p>
         </div>
       </Modal>

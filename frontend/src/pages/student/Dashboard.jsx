@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getStudentDashboard, getMyAttempts } from '../../api/client';
+import ProfessorPicker from '../../components/ProfessorPicker';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -13,7 +14,7 @@ import {
   TrendingUp,
   CheckCircle2,
   Clock,
-  ArrowRight,
+  ArrowLeft,
   Sparkles,
   Target,
   FileText,
@@ -51,7 +52,7 @@ const StudentDashboard = () => {
         }
       } catch (err) {
         console.error('Error loading student dashboard:', err);
-        setError('Could not load some analytics data.');
+        setError('معلش، قدرنا نجيب جزء من البيانات بس.');
       } finally {
         setLoading(false);
       }
@@ -61,7 +62,7 @@ const StudentDashboard = () => {
   }, [user]);
 
   if (loading) {
-    return <LoadingSpinner size="lg" message="Loading your student learning portal..." />;
+    return <LoadingSpinner size="lg" message="جاري تحميل المنصة... " />;
   }
 
   // Derive metrics
@@ -89,34 +90,34 @@ const StudentDashboard = () => {
     dashboardData?.feedback_summary ||
     dashboardData?.recent_feedback ||
     dashboardData?.strengths ||
-    'Consistently demonstrates solid understanding of fundamental concepts. Focus on elaborating rubric criteria in essay questions.';
+    'بنلاحظ فهم قوي للمفاهيم الأساسية — ركّز على شرح إجاباتك بالتفصيل في أسئلة المقال.';
 
   const recentAttempts = attempts.slice(0, 5);
 
   return (
     <div className="space-y-8">
       {/* Welcome Banner */}
-      <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-indigo-800 rounded-2xl p-6 md:p-8 text-white shadow-lg shadow-indigo-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
-        <div className="space-y-1.5">
-          <span className="text-xs uppercase tracking-wider font-semibold text-indigo-200">
-            Student Assessment Portal
-          </span>
-          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
-            Hello, {user?.name || 'Student'}!
+      <div className="relative overflow-hidden bg-gradient-to-bl from-teal-700 via-teal-800 to-cocoa-950 rounded-3xl p-6 md:p-8 text-white shadow-pop flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+        <span className="code-chip-light absolute top-5 end-6 rotate-2 hidden md:inline-block">your_progress +1 🚀</span>
+        <div className="absolute -bottom-16 -start-10 w-56 h-56 rounded-full bg-teal-500/15 blur-2xl" />
+        <div className="space-y-1.5 relative z-10">
+          <span className="text-xs font-bold text-gold-300">بوابة الطالب</span>
+          <h1 className="font-display text-3xl md:text-4xl leading-snug">
+            يلا بينا يا <span className="text-gold-300">{user?.name || 'صديقنا'}</span> 🚀
           </h1>
-          <p className="text-sm text-indigo-100 max-w-xl">
-            Take curriculum assessments, receive instant AI feedback with rubric breakdowns, and track your cognitive growth.
+          <p className="text-sm text-teal-100 max-w-xl leading-relaxed">
+            امتحن من منهجك، خد تقييم فوري من الذكاء الاصطناعي، وتابع تطور مستواك.
           </p>
         </div>
-        <div>
+        <div className="relative z-10">
           <Link to="/student/exams">
             <Button
               variant="secondary"
               size="lg"
               icon={BookOpen}
-              className="bg-white text-indigo-900 hover:bg-indigo-50 border-none font-semibold shadow-md"
+              className="bg-gold-400 text-clay-950 hover:bg-gold-300 border-none font-bold"
             >
-              Browse Available Exams
+              شوف الامتحانات المتاحة
             </Button>
           </Link>
         </div>
@@ -124,54 +125,51 @@ const StudentDashboard = () => {
 
       {error && <Alert type="warning" message={error} onClose={() => setError('')} />}
 
+      {/* Professor selection — persisted on the account, exams are scoped to it */}
+      <ProfessorPicker />
+
       {/* Top 3 Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-        <Card className="hover:border-indigo-200">
+        <Card className="hover:border-teal-200 !border-t-4 !border-t-teal-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Completed Assessments
-              </p>
-              <h3 className="text-3xl font-extrabold text-gray-900 mt-1">{totalAttempts}</h3>
-              <p className="text-xs text-indigo-600 font-medium mt-1">Exams submitted</p>
+              <p className="text-xs font-bold text-cocoa-500">امتحانات سلّمتها</p>
+              <h3 className="font-display text-3xl text-teal-700 mt-1">{totalAttempts}</h3>
+              <p className="text-[11px] text-cocoa-500 font-semibold mt-1">محاولة مكتملة</p>
             </div>
-            <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
+            <div className="w-12 h-12 bg-teal-50 text-teal-700 rounded-2xl rounded-br-sm flex items-center justify-center">
               <CheckCircle2 className="w-6 h-6" />
             </div>
           </div>
         </Card>
 
-        <Card className="hover:border-emerald-200">
+        <Card className="hover:border-gold-200 !border-t-4 !border-t-gold-400">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Average Score
-              </p>
-              <h3 className="text-3xl font-extrabold text-gray-900 mt-1">
+              <p className="text-xs font-bold text-cocoa-500">متوسط درجاتك</p>
+              <h3 className="font-display text-3xl text-gold-600 mt-1">
                 {avgScore !== null ? `${avgScore}%` : '—'}
               </h3>
-              <p className="text-xs text-emerald-600 font-medium mt-1">Overall performance</p>
+              <p className="text-[11px] text-cocoa-500 font-semibold mt-1">أداءك العام</p>
             </div>
-            <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+            <div className="w-12 h-12 bg-gold-100 text-gold-600 rounded-2xl rounded-br-sm flex items-center justify-center">
               <Award className="w-6 h-6" />
             </div>
           </div>
         </Card>
 
-        <Card className="hover:border-purple-200">
+        <Card className="hover:border-clay-200 !border-t-4 !border-t-clay-600">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Assigned Learning Cluster
-              </p>
+              <p className="text-xs font-bold text-cocoa-500">مجموعتك التعليمية</p>
               <div className="mt-1.5">
                 <Badge type="cluster" size="lg">
                   {cluster}
                 </Badge>
               </div>
-              <p className="text-xs text-purple-600 font-medium mt-1">ML proficiency tier</p>
+              <p className="text-[11px] text-cocoa-500 font-semibold mt-1">حسب تحليل الذكاء الاصطناعي</p>
             </div>
-            <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center">
+            <div className="w-12 h-12 bg-clay-100 text-clay-700 rounded-2xl rounded-br-sm flex items-center justify-center">
               <Target className="w-6 h-6" />
             </div>
           </div>
@@ -183,31 +181,31 @@ const StudentDashboard = () => {
         {/* Recent Attempts (2 cols) */}
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <Clock className="w-5 h-5 text-indigo-600" />
-              Recent Exam Attempts
+            <h2 className="text-lg font-extrabold text-ink flex items-center gap-2">
+              <Clock className="w-5 h-5 text-clay-600" />
+              آخر محاولاتك
             </h2>
             <Link
               to="/student/results"
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+              className="text-xs font-bold text-clay-700 hover:text-clay-600 flex items-center gap-1"
             >
-              All Results ({attempts.length}) <ArrowRight className="w-3.5 h-3.5" />
+              كل النتائج ({attempts.length}) <ArrowLeft className="w-3.5 h-3.5" />
             </Link>
           </div>
 
           {recentAttempts.length === 0 ? (
             <Card className="text-center py-12">
-              <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-3">
-                <BookOpen className="w-6 h-6" />
+              <div className="w-14 h-14 bg-teal-50 text-teal-700 rounded-2xl rounded-br-md flex items-center justify-center mx-auto mb-3 -rotate-3 text-2xl">
+                🦉
               </div>
-              <h4 className="text-base font-bold text-gray-800">No attempts yet</h4>
-              <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
-                You haven't taken any assessment exams yet. Select an exam from the catalog to test your knowledge!
+              <h4 className="text-base font-bold text-ink">لسه مامتحنتش حاجة</h4>
+              <p className="text-xs text-cocoa-500 mt-1 max-w-sm mx-auto leading-relaxed">
+                اختار امتحان من القائمة واختبر معلوماتك — النتيجة والتحليل هيوصلك فوراً!
               </p>
               <div className="mt-4">
                 <Link to="/student/exams">
-                  <Button size="sm" icon={BookOpen}>
-                    Browse Available Exams
+                  <Button size="sm" icon={BookOpen} className="btn-cut">
+                    شوف الامتحانات المتاحة
                   </Button>
                 </Link>
               </div>
@@ -229,37 +227,37 @@ const StudentDashboard = () => {
                 return (
                   <Card
                     key={attemptId || Math.random()}
-                    className="p-4 hover:border-indigo-300 transition-all"
+                    className="p-4 hover:border-gold-400 transition-all"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
-                        <h4 className="font-semibold text-gray-900 text-sm">
+                        <h4 className="font-bold text-ink text-sm" dir="auto">
                           {attempt.exam_title || attempt.title || `Assessment #${attempt.exam_id || attemptId}`}
                         </h4>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          Submitted on:{' '}
+                        <p className="text-xs text-cocoa-500 mt-0.5">
+                          اتسلّم في:{' '}
                           {attempt.submitted_at
-                            ? new Date(attempt.submitted_at).toLocaleDateString()
-                            : 'Recently'}
+                            ? new Date(attempt.submitted_at).toLocaleDateString('ar-EG')
+                            : 'حديثاً'}
                         </p>
                       </div>
 
                       <div className="flex items-center gap-4 shrink-0">
-                        <div className="text-right">
-                          <p className="text-sm font-bold text-gray-900">
-                            {score} / {maxScore} pts ({pct}%)
+                        <div className="text-left">
+                          <p className="text-sm font-extrabold text-ink">
+                            {score} / {maxScore} ({pct}%)
                           </p>
                           <span
-                            className={`text-[10px] font-bold uppercase tracking-wider ${
-                              passed ? 'text-emerald-600' : 'text-rose-600'
+                            className={`text-[10px] font-bold ${
+                              passed ? 'text-teal-700' : 'text-rose-600'
                             }`}
                           >
-                            {passed ? 'Passed' : 'Needs Review'}
+                            {passed ? 'ناجح 🎉' : 'محتاج مراجعة'}
                           </span>
                         </div>
                         <Link to={`/student/attempt/${attemptId}`}>
                           <Button variant="outline" size="sm">
-                            View Feedback
+                            شوف التقييم
                           </Button>
                         </Link>
                       </div>
@@ -273,18 +271,18 @@ const StudentDashboard = () => {
 
         {/* Feedback Summary Card (1 col) */}
         <div className="space-y-4">
-          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-indigo-600" />
-            AI Feedback Summary
+          <h2 className="text-lg font-extrabold text-ink flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-clay-600" />
+            تقييم الذكاء الاصطناعي
           </h2>
 
-          <Card title="Semantic Progress Diagnostic" subtitle="Grounded in your recent submissions">
+          <Card title="إقيوس بيقولك 💬" subtitle="بناءً على آخر محاولاتك">
             <div className="space-y-4 text-xs">
-              <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 text-indigo-950 leading-relaxed">
+              <div className="p-3 bg-teal-50/70 rounded-2xl border-2 border-dashed border-teal-200 text-teal-900 leading-relaxed font-semibold">
                 {typeof feedbackSummary === 'string' ? (
                   <p>{feedbackSummary}</p>
                 ) : (
-                  <ul className="list-disc pl-4 space-y-1">
+                  <ul className="list-disc ps-4 space-y-1">
                     {Array.isArray(feedbackSummary) &&
                       feedbackSummary.map((item, idx) => <li key={idx}>{item}</li>)}
                   </ul>
@@ -292,21 +290,21 @@ const StudentDashboard = () => {
               </div>
 
               <div>
-                <h5 className="font-bold text-gray-800 uppercase tracking-wider text-[10px] mb-2">
-                  Recommended Study Steps
+                <h5 className="font-bold text-cocoa-800 text-[12px] mb-2">
+                  خطوات مقترحة للمذاكرة
                 </h5>
-                <ul className="space-y-2 text-gray-600">
+                <ul className="space-y-2 text-cocoa-500">
                   <li className="flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                    <span>Review lesson notes prior to taking timed evaluations.</span>
+                    <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+                    <span>راجع ملاحظات الدرس قبل ما تبدأ الامتحان.</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                    <span>Support essay statements with specific curriculum examples.</span>
+                    <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+                    <span>ادعم إجاباتك بأمثلة من المنهج.</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                    <span>Check grading rubrics carefully before submitting answers.</span>
+                    <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+                    <span>اقرأ معايير التصحيح كويس قبل التسليم.</span>
                   </li>
                 </ul>
               </div>
@@ -314,7 +312,7 @@ const StudentDashboard = () => {
               <div className="pt-2">
                 <Link to="/student/exams">
                   <Button variant="outline" size="sm" className="w-full">
-                    Start New Assessment
+                    ابدأ امتحان جديد 🚀
                   </Button>
                 </Link>
               </div>

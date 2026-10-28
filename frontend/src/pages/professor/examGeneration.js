@@ -1,4 +1,5 @@
 export const buildExamPayload = ({
+  curriculumId,
   title,
   selectedLesson,
   topic,
@@ -14,6 +15,7 @@ export const buildExamPayload = ({
     (selectedLesson ? `Lesson ${selectedLesson}` : 'General Curriculum');
 
   return {
+    curriculum_id: Number.isInteger(curriculumId) ? curriculumId : undefined,
     title: (title && typeof title === 'string' && title.trim()) || undefined,
     lesson_id: selectedLesson,
     lesson: selectedLesson,

@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>إقـياس — التصميم المقترح للمنصة</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Tajawal:wght@300;400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --clay-900:#7C2D12;
+    --clay-800:#9A3412;
+    --clay-700:#C2410C;
+    --clay-600:#EA580C;
+    --clay-100:#FFEDD5;
+    --clay-50:#FFF3E6;
+    --gold-500:#F59E0B;
+    --gold-400:#FBBF24;
+    --gold-100:#FEF3C7;
+    --cream:#FFF9F2;
+    --sand:#F6EBDD;
+    --brown-950:#291007;
+    --brown-800:#4A2310;
+    --brown-500:#8A6A52;
+    --brown-300:#C4A88F;
+    --teal-700:#0F766E;
+    --teal-100:#CCFBF1;
+    --rose-600:#B91C1C;
+    --white:#FFFFFF;
+    --shadow-card:0 10px 30px -12px rgba(124,45,18,.18);
+    --radius:18px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:#EFE4D6;
+    font-family:'Tajawal',sans-serif;
+    color:var(--brown-950);
+    padding:32px 16px 80px;
+  }
+  h1,h2,h3,h4{font-family:'Cairo',sans-serif}
+
+  /* ===== page frame (mockup canvas) ===== */
+  .canvas-wrap{max-width:1200px;margin:0 auto}
+  .mock-title{
+    text-align:center;margin-bottom:8px;font-size:34px;font-weight:900;color:var(--clay-800);
+  }
+  .mock-sub{text-align:center;color:var(--brown-500);margin-bottom:36px;font-size:15px}
+  .screen{
+    background:var(--cream);
+    border-radius:26px;
+    box-shadow:0 30px 60px -20px rgba(74,35,16,.35);
+    overflow:hidden;
+    margin-bottom:56px;
+    border:1px solid rgba(196,168,143,.4);
+  }
+  .screen-label{
+    display:flex;align-items:center;gap:10px;
+    margin:0 auto 14px;max-width:1200px;
+    font-family:'Cairo';font-weight:800;font-size:18px;color:var(--brown-800);
+  }
+  .screen-label .num{
+    width:30px;height:30px;border-radius:9px;background:var(--clay-700);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:15px;flex:none;
+  }
+
+  /* ===== palette strip ===== */
+  .palette{max-width:1200px;margin:0 auto 48px;display:flex;gap:12px;flex-wrap:wrap}
+  .swatch{flex:1;min-width:120px;background:#fff;border-radius:14px;padding:10px;box-shadow:var(--shadow-card)}
+  .swatch .chip{height:52px;border-radius:9px;margin-bottom:8px}
+  .swatch p{font-size:12px;font-weight:700;color:var(--brown-800)}
+  .swatch span{font-size:11px;color:var(--brown-500);direction:ltr;display:block;text-align:right}
+
+  /* ===== pharaonic zigzag divider ===== */
+  .zigzag{
+    height:12px;
+    background:
+      linear-gradient(135deg,var(--gold-400) 25%,transparent 25%) 0 0/14px 12px,
+      linear-gradient(225deg,var(--gold-400) 25%,transparent 25%) 0 0/14px 12px,
+      linear-gradient(315deg,var(--gold-400) 25%,transparent 25%) 0 100%/14px 12px,
+      linear-gradient(45deg,var(--gold-400) 25%,transparent 25%) 0 100%/14px 12px;
+    background-color:var(--clay-800);
+  }
+
+  /* geometric star pattern (subtle) */
+  .pattern{
+    background-image:radial-gradient(circle at 1px 1px, rgba(255,255,255,.14) 1.5px, transparent 0);
+    background-size:22px 22px;
+  }
+
+  /* ============================================================
+     SCREEN 1 — LOGIN
+  ============================================================ */
+  .login{display:grid;grid-template-columns:1fr 1fr;min-height:560px}
+  .login-brand{
+    background:linear-gradient(160deg,var(--clay-700) 0%,var(--clay-800) 55%,var(--clay-900) 100%);
+    color:#fff;padding:56px 48px;display:flex;flex-direction:column;justify-content:space-between;position:relative;
+  }
+  .login-brand .logo-row{display:flex;align-items:center;gap:12px}
+  .logo-mark{
+    width:46px;height:46px;border-radius:14px;background:var(--gold-400);color:var(--clay-900);
+    display:flex;align-items:center;justify-content:center;font-family:'Cairo';font-weight:900;font-size:22px;
+    box-shadow:0 6px 16px rgba(0,0,0,.25);
+  }
+  .logo-name{font-family:'Cairo';font-weight:900;font-size:24px}
+  .logo-name small{display:block;font-family:'Tajawal';font-weight:500;font-size:12px;color:var(--gold-100)}
+  .brand-quote h2{font-size:34px;line-height:1.45;font-weight:900}
+  .brand-quote h2 em{color:var(--gold-400);font-style:normal}
+  .brand-quote p{margin-top:14px;color:var(--clay-100);font-size:15px;line-height:1.8;max-width:380px}
+  .brand-stats{display:flex;gap:28px}
+  .brand-stats div b{font-family:'Cairo';font-size:24px;display:block;color:var(--gold-400)}
+  .brand-stats div span{font-size:12px;color:var(--clay-100)}
+
+  .login-form{padding:56px 48px;display:flex;flex-direction:column;justify-content:center}
+  .login-form h3{font-size:26px;font-weight:900;margin-bottom:6px}
+  .login-form .hint{color:var(--brown-500);font-size:14px;margin-bottom:22px}
+  .role-tabs{
+    display:flex;background:var(--sand);border-radius:13px;padding:5px;margin-bottom:22px;max-width:280px;
+  }
+  .role-tabs span{
+    flex:1;text-align:center;padding:9px 0;border-radius:9px;font-weight:700;font-size:14px;color:var(--brown-500);cursor:default;
+  }
+  .role-tabs span.on{background:var(--clay-700);color:#fff;box-shadow:0 4px 10px rgba(194,65,12,.35)}
+  .field{margin-bottom:16px}
+  .field label{display:block;font-size:13px;font-weight:700;color:var(--brown-800);margin-bottom:7px}
+  .field input{
+    width:100%;max-width:380px;padding:13px 16px;border:1.5px solid var(--brown-300);border-radius:12px;
+    font-family:'Tajawal';font-size:14px;background:#fff;color:var(--brown-950);outline:none;
+  }
+  .field input::placeholder{color:#C9B8A8}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;cursor:pointer;
+    font-family:'Cairo';font-weight:800;border-radius:12px;transition:.2s;
+  }
+  .btn-primary{background:linear-gradient(180deg,var(--clay-600),var(--clay-700));color:#fff;padding:13px 26px;font-size:15px;box-shadow:0 8px 18px rgba(194,65,12,.35)}
+  .btn-gold{background:linear-gradient(180deg,var(--gold-400),var(--gold-500));color:var(--clay-900);padding:12px 26px;font-size:14px;box-shadow:0 6px 14px rgba(245,158,11,.35)}
+  .btn-outline{background:#fff;color:var(--clay-700);border:1.5px solid var(--clay-700);padding:11px 22px;font-size:14px}
+  .btn-block{width:100%;max-width:380px}
+  .login-links{margin-top:18px;font-size:13px;color:var(--brown-500)}
+  .login-links b{color:var(--clay-700)}
+
+  /* ============================================================
+     SCREEN 2 — PROFESSOR DASHBOARD (RTL)
+  ============================================================ */
+  .dash{display:grid;grid-template-columns:250px 1fr;min-height:620px}
+  .side{
+    background:var(--brown-950);color:#EDE0D2;padding:26px 16px;display:flex;flex-direction:column;position:relative;
+  }
+  .side .logo-row{padding:0 8px 22px;border-bottom:1px solid rgba(255,255,255,.08)}
+  .side .logo-mark{width:40px;height:40px;font-size:19px}
+  .side .logo-name{font-size:19px}
+  .side nav{margin-top:20px;flex:1}
+  .side .sec{font-size:11px;color:#8A6A52;font-weight:700;margin:8px 10px 10px;letter-spacing:.5px}
+  .side a{
+    display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:11px;font-size:14px;font-weight:600;
+    color:#CBB8A5;margin-bottom:4px;text-decoration:none;
+  }
+  .side a.on{background:linear-gradient(180deg,var(--clay-600),var(--clay-700));color:#fff;box-shadow:0 6px 14px rgba(0,0,0,.3)}
+  .side a .ico{width:20px;text-align:center;font-size:15px}
+  .side .foot{border-top:1px solid rgba(255,255,255,.08);padding-top:14px}
+  .side .foot a{color:#F2A9A0}
+
+  .dash-main{padding:26px 30px}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+  .topbar h3{font-size:21px;font-weight:900}
+  .topbar .crumb{font-size:12px;color:var(--brown-500);margin-top:2px}
+  .userchip{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--sand);border-radius:999px;padding:6px 14px 6px 8px;box-shadow:var(--shadow-card)}
+  .userchip .av{width:34px;height:34px;border-radius:50%;background:var(--teal-700);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-family:'Cairo'}
+  .userchip b{font-size:13px;display:block}
+  .userchip span{font-size:11px;color:var(--brown-500)}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+  .stat{
+    background:#fff;border-radius:var(--radius);padding:18px;box-shadow:var(--shadow-card);
+    border-top:4px solid var(--clay-700);
+  }
+  .stat:nth-child(2){border-top-color:var(--gold-400)}
+  .stat:nth-child(3){border-top-color:var(--teal-700)}
+  .stat:nth-child(4){border-top-color:#8A6A52}
+  .stat .ic{font-size:20px;background:var(--clay-50);width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;margin-bottom:10px}
+  .stat b{font-family:'Cairo';font-size:24px;display:block}
+  .stat span{font-size:12.5px;color:var(--brown-500);font-weight:600}
+  .stat .trend{font-size:11px;font-weight:700;margin-top:6px;display:inline-block;padding:2px 8px;border-radius:99px}
+  .trend.up{background:var(--teal-100);color:var(--teal-700)}
+  .trend.mid{background:var(--gold-100);color:#92400E}
+
+  .panel{
+    background:#fff;border-radius:var(--radius);box-shadow:var(--shadow-card);overflow:hidden;margin-bottom:22px;
+  }
+  .panel-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--sand)}
+  .panel-head h4{font-size:16px;font-weight:800}
+  .panel-head .more{font-size:12.5px;color:var(--clay-700);font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{background:var(--cream);color:var(--brown-500);font-weight:700;padding:11px 20px;text-align:right;font-size:12.5px}
+  td{padding:13px 20px;border-top:1px solid #F7EFE6;color:var(--brown-800)}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:99px}
+  .badge.open{background:var(--teal-100);color:var(--teal-700)}
+  .badge.draft{background:var(--gold-100);color:#92400E}
+  .badge.closed{background:#F1E8DF;color:var(--brown-500)}
+  .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+  .progress{width:110px;height:8px;background:var(--sand);border-radius:99px;overflow:hidden;display:inline-block;vertical-align:middle;margin-inline-start:8px}
+  .progress i{display:block;height:100%;background:linear-gradient(90deg,var(--gold-400),var(--clay-600));border-radius:99px}
+
+  .cta-row{display:flex;gap:12px;margin-bottom:24px}
+  .hero-cta{
+    flex:1;background:linear-gradient(135deg,var(--clay-700),var(--clay-900));border-radius:var(--radius);
+    color:#fff;padding:22px 24px;display:flex;align-items:center;justify-content:space-between;position:relative;overflow:hidden;
+  }
+  .hero-cta h4{font-size:18px;font-weight:900;margin-bottom:4px}
+  .hero-cta p{font-size:13px;color:var(--clay-100)}
+  .hero-cta .zig{position:absolute;bottom:0;inset-inline:0;height:8px}
+
+  /* ============================================================
+     SCREEN 3 — STUDENT PORTAL
+  ============================================================ */
+  .exams-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;padding:22px}
+  .exam-card{
+    background:#fff;border-radius:var(--radius);box-shadow:var(--shadow-card);overflow:hidden;
+    border:1px solid #F3E7DA;display:flex;flex-direction:column;
+  }
+  .exam-card .cover{
+    height:96px;position:relative;display:flex;align-items:flex-end;padding:14px;color:#fff;
+  }
+  .cover.c1{background:linear-gradient(135deg,var(--clay-600),var(--clay-900))}
+  .cover.c2{background:linear-gradient(135deg,var(--teal-700),#134E4A)}
+  .cover.c3{background:linear-gradient(135deg,#B45309,var(--clay-900))}
+  .cover .pattern{position:absolute;inset:0}
+  .cover h5{position:relative;font-family:'Cairo';font-weight:800;font-size:16px}
+  .cover .chip{
+    position:absolute;top:12px;inset-inline-start:12px;background:rgba(255,255,255,.92);color:var(--brown-800);
+    font-size:11px;font-weight:800;padding:4px 10px;border-radius:99px;
+  }
+  .exam-card .body{padding:16px;flex:1;display:flex;flex-direction:column;gap:10px}
+  .meta{display:flex;justify-content:space-between;font-size:12.5px;color:var(--brown-500)}
+  .meta b{color:var(--brown-800)}
+  .exam-card .foot{padding:0 16px 16px}
+  .exam-card .btn{width:100%}
+  .timer{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:var(--clay-700);background:var(--clay-50);padding:5px 10px;border-radius:99px;width:fit-content}
+
+  .result-strip{display:flex;gap:16px;padding:0 22px 22px}
+  .res-card{flex:1;background:#fff;border-radius:var(--radius);box-shadow:var(--shadow-card);padding:16px;display:flex;align-items:center;gap:14px}
+  .res-card .ring{
+    width:52px;height:52px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+    font-family:'Cairo';font-weight:900;font-size:14px;color:#fff;
+  }
+  .res-card b{font-size:14px;display:block}
+  .res-card span{font-size:12px;color:var(--brown-500)}
+
+  .note{
+    max-width:1200px;margin:0 auto 60px;background:#fff;border:1.5px dashed var(--clay-700);border-radius:16px;
+    padding:18px 22px;font-size:14px;color:var(--brown-800);line-height:1.9;
+  }
+  .note b{color:var(--clay-800)}
+
+  @media (max-width:900px){
+    .login,.dash{grid-template-columns:1fr}
+    .stats,.exams-grid{grid-template-columns:1fr 1fr}
+    .side{display:none}
+  }
+</style>
+</head>
+<body>
+
+<div class="canvas-wrap">
+  <h1 class="mock-title">إقـياس — منصة التقييم التعليمي الذكية</h1>
+  <p class="mock-sub">معاينة التصميم المقترح · واجهة عربية بالكامل (RTL) · بهوية مصرية دافئة مستوحاة من المنصات التعليمية المصرية</p>
+
+  <!-- palette -->
+  <div class="palette">
+    <div class="swatch"><div class="chip" style="background:linear-gradient(135deg,#EA580C,#9A3412)"></div><p>الطوب المصري (أساسي)</p><span>#C2410C → #9A3412</span></div>
+    <div class="swatch"><div class="chip" style="background:#F59E0B"></div><p>الذهبي الفرعوني (تمييز)</p><span>#F59E0B / #FBBF24</span></div>
+    <div class="swatch"><div class="chip" style="background:#0F766E"></div><p>النيلي (جانب الطالب / نجاح)</p><span>#0F766E</span></div>
+    <div class="swatch"><div class="chip" style="background:#FFF9F2;border:1px solid #eee"></div><p>الكريمي (خلفية)</p><span>#FFF9F2</span></div>
+    <div class="swatch"><div class="chip" style="background:#291007"></div><p>البني الداكن (نصوص/شريط جانبي)</p><span>#291007</span></div>
+  </div>
+
+  <!-- ============ SCREEN 1 : LOGIN ============ -->
+  <div class="screen-label"><span class="num">١</span> شاشة تسجيل الدخول</div>
+  <div class="screen">
+    <div class="login">
+      <div class="login-brand pattern">
+        <div class="logo-row">
+          <div class="logo-mark">إ</div>
+          <div class="logo-name">إقـياس<small>منصة التقييم التعليمي الذكية</small></div>
+        </div>
+        <div class="brand-quote">
+          <h2>امتحاناتك اتولّدت <em>بذكاء</em>،<br/>وتقييمك بقى أسهل.</h2>
+          <p>منصة مصرية بتساعد الأستاذ يرفع المنهج ويولّد امتحانات ذكية من محتوى المقرر، وبيتابع مستوى كل طالب لحظة بلحظة.</p>
+        </div>
+        <div class="brand-stats">
+          <div><b>+٥٠٠</b><span>امتحان متولّد</span></div>
+          <div><b>+٢٠٠٠</b><span>محاولة تقييم</span></div>
+          <div><b>٩٨٪</b><span>دقة التصحيح</span></div>
+        </div>
+      </div>
+      <div class="login-form">
+        <h3>أهلاً بيك تاني 👋</h3>
+        <p class="hint">سجّل دخولك عشان تكمل من حيث وقفت</p>
+        <div class="role-tabs">
+          <span class="on">أستاذ</span>
+          <span>طالب</span>
+        </div>
+        <div class="field">
+          <label>البريد الإلكتروني</label>
+          <input type="email" placeholder="example@university.edu.eg" />
+        </div>
+        <div class="field">
+          <label>كلمة المرور</label>
+          <input type="password" placeholder="••••••••" />
+        </div>
+        <button class="btn btn-primary btn-block">تسجيل الدخول</button>
+        <p class="login-links">لسه معندكش حساب؟ <b>أنشئ حساب جديد</b></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SCREEN 2 : PROFESSOR DASHBOARD ============ -->
+  <div class="screen-label"><span class="num">٢</span> لوحة تحكم الأستاذ</div>
+  <div class="screen">
+    <div class="dash">
+      <aside class="side pattern">
+        <div class="logo-row" style="display:flex;align-items:center;gap:10px">
+          <div class="logo-mark">إ</div>
+          <div class="logo-name" style="color:#fff">إقـياس<small>مساحة الأستاذ</small></div>
+        </div>
+        <nav>
+          <div class="sec">القائمة الرئيسية</div>
+          <a class="on"><span class="ico">🏠</span> الرئيسية</a>
+          <a><span class="ico">📤</span> رفع المنهج</a>
+          <a><span class="ico">✨</span> إنشاء امتحان</a>
+          <a><span class="ico">📚</span> قائمة الامتحانات</a>
+          <a><span class="ico">📊</span> الإحصائيات والتحليلات</a>
+        </nav>
+        <div class="foot">
+          <div class="sec">الحساب</div>
+          <a><span class="ico">⚙️</span> الإعدادات</a>
+          <a><span class="ico">🚪</span> تسجيل الخروج</a>
+        </div>
+      </aside>
+      <div class="dash-main">
+        <div class="topbar">
+          <div>
+            <h3>الرئيسية</h3>
+            <div class="crumb">مساحة الأستاذ · مرحباً د. أحمد 👋</div>
+          </div>
+          <div class="userchip">
+            <div class="av">أ</div>
+            <div><b>د. أحمد محمود</b><span>أستاذ · هندسة الحاسبات</span></div>
+          </div>
+        </div>
+
+        <div class="cta-row">
+          <div class="hero-cta pattern">
+            <div>
+              <h4>ولّد امتحان جديد بضغطة واحدة</h4>
+              <p>ارفع ملف المقرر (PDF / Word) وسيقوم الذكاء الاصطناعي بتوليد أسئلة متدرجة الصعوبة</p>
+            </div>
+            <button class="btn btn-gold">✨ إنشاء امتحان</button>
+            <div class="zig zigzag"></div>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><div class="ic">📚</div><b>١٢</b><span>إجمالي الامتحانات</span><span class="trend up">▲ ٣ هذا الشهر</span></div>
+          <div class="stat"><div class="ic">👥</div><b>١٨٤</b><span>طلاب مشاركين</span><span class="trend up">▲ ٩٪</span></div>
+          <div class="stat"><div class="ic">🎯</div><b>٧٨٪</b><span>متوسط الدرجات</span><span class="trend mid">▼ ٢٪</span></div>
+          <div class="stat"><div class="ic">✅</div><b>٨٦٪</b><span>نسبة النجاح</span><span class="trend up">▲ ٤٪</span></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h4>أحدث الامتحانات</h4>
+            <span class="more">عرض الكل ←</span>
+          </div>
+          <table>
+            <tr><th>اسم الامتحان</th><th>المقرر</th><th>الحالة</th><th>المشاركون</th><th>المتوسط</th></tr>
+            <tr>
+              <td><b>امتحان منتصف الترم — الوحدة الأولى</b></td>
+              <td>ذكاء اصطناعي</td>
+              <td><span class="badge open"><span class="dot"></span> متاح الآن</span></td>
+              <td>٦٥ / ٧٠ <span class="progress"><i style="width:93%"></i></span></td>
+              <td><b>٨٢٪</b></td>
+            </tr>
+            <tr>
+              <td><b>كويز أسبوعي — الشبكات العصبية</b></td>
+              <td>ذكاء اصطناعي</td>
+              <td><span class="badge draft"><span class="dot"></span> مسودة</span></td>
+              <td>—</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td><b>امتحان نهائي — الخوارزميات</b></td>
+              <td>خوارزميات</td>
+              <td><span class="badge closed"><span class="dot"></span> مُغلق</span></td>
+              <td>٧٠ / ٧٠ <span class="progress"><i style="width:100%"></i></span></td>
+              <td><b>٧٤٪</b></td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SCREEN 3 : STUDENT PORTAL ============ -->
+  <div class="screen-label"><span class="num">٣</span> بوابة الطالب — الامتحانات المتاحة</div>
+  <div class="screen">
+    <div class="dash-main">
+      <div class="topbar">
+        <div>
+          <h3>الامتحانات المتاحة</h3>
+          <div class="crumb">بوابة الطالب · عندك ٢ امتحانات متاحة النهاردة</div>
+        </div>
+        <div class="userchip">
+          <div class="av" style="background:var(--clay-700)">م</div>
+          <div><b>محمد سمير</b><span>طالب · الفرقوة الرابعة</span></div>
+        </div>
+      </div>
+
+      <div class="result-strip" style="padding:0 0 22px">
+        <div class="res-card">
+          <div class="ring" style="background:conic-gradient(var(--gold-500) 0 86%, var(--sand) 86% 100%);color:var(--brown-800)">٨٦٪</div>
+          <div><b>متوسط أدائك العام</b><span>مقارنة بمتوسط الفصل ٧٤٪ — أنت في المتقدمين 🎉</span></div>
+        </div>
+        <div class="res-card">
+          <div class="ring" style="background:conic-gradient(var(--teal-700) 0 92%, var(--sand) 92% 100%);color:var(--brown-800)">٩/١٠</div>
+          <div><b>آخر محاولة — كويز الخوارزميات</b><span>اتصحّح آلياً فوراً بعد التسليم</span></div>
+        </div>
+      </div>
+
+      <div class="exams-grid" style="padding:0">
+        <div class="exam-card">
+          <div class="cover c1"><div class="pattern"></div><span class="chip">🟢 متاح</span><h5>امتحان منتصف الترم — الوحدة الأولى</h5></div>
+          <div class="body">
+            <div class="meta"><span>المقرر</span><b>ذكاء اصطناعي</b></div>
+            <div class="meta"><span>عدد الأسئلة</span><b>٢٥ سؤال</b></div>
+            <div class="meta"><span>الدرجة الكلية</span><b>٥٠ درجة</b></div>
+            <span class="timer">⏳ المتبقي للتسليم: يومين و٣ ساعات</span>
+          </div>
+          <div class="foot"><button class="btn btn-primary">ابدأ الامتحان</button></div>
+        </div>
+
+        <div class="exam-card">
+          <div class="cover c2"><div class="pattern"></div><span class="chip">🟢 متاح</span><h5>كويز أسبوعي — الشبكات العصبية</h5></div>
+          <div class="body">
+            <div class="meta"><span>المقرر</span><b>ذكاء اصطناعي</b></div>
+            <div class="meta"><span>عدد الأسئلة</span><b>١٠ أسئلة</b></div>
+            <div class="meta"><span>الدرجة الكلية</span><b>٢٠ درجة</b></div>
+            <span class="timer">⏳ المتبقي للتسليم: ٥ ساعات و٤٠ دقيقة</span>
+          </div>
+          <div class="foot"><button class="btn btn-primary" style="background:linear-gradient(180deg,#14B8A6,var(--teal-700))">ابدأ الامتحان</button></div>
+        </div>
+
+        <div class="exam-card">
+          <div class="cover c3"><div class="pattern"></div><span class="chip">مُغلق</span><h5>امتحان نهائي — الخوارزميات</h5></div>
+          <div class="body">
+            <div class="meta"><span>المقرر</span><b>خوارزميات</b></div>
+            <div class="meta"><span>درجتك</span><b>٤٢ / ٥٠ (٨٤٪)</b></div>
+            <div class="meta"><span>ترتيبك في الفصل</span><b>السابع من ٧٠</b></div>
+          </div>
+          <div class="foot"><button class="btn btn-outline">عرض النتيجة والتحليل</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="zigzag"></div>
+  </div>
+
+  <div class="note">
+    <b>ملاحظات التصميم:</b>
+    الهوية مبنية على ألوان دافئة مصرية (طوبي + ذهبي فرعوني + كريمي) مع خط <b>Cairo</b> للعناوين و<b>Tajawal</b> للنصوص، والاتجاه RTL بالكامل.
+    زخرفة «الزيجزاج» الفرعونية تظهر كشريط فاصل رفيع فقط (في الهيرو وأسفل الصفحات) لطلة مصرية بدون مبالغة.
+    جانب الأستاذ يوظّف الطوبي/البني الداكن، بينما جانب الطالب يستخدم النيلي كرمز للنجاح والتقدم — مع الحفاظ على نفس العائلة البصرية.
+    الشريط الجانبي انتقل لليمين (RTL) والأسهم والاتجاهات كلها معكوسة تلقائياً مع خصائص <b>logical properties</b>.
+    هذه معاينة ثابتة (Mockup) — التنفيذ هيتم في تطبيق React الحالي بنفس الألوان والخطوط عبر Tailwind.
+  </div>
+</div>
+
+</body>
+</html>

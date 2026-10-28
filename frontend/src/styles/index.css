@@ -4,25 +4,114 @@
 
 @layer base {
   body {
-    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-family: 'Tajawal', 'Cairo', system-ui, sans-serif;
+    background-color: #FFF9F2;
+  }
+  h1, h2, h3, h4 {
+    font-family: 'Cairo', 'Tajawal', sans-serif;
   }
 }
 
-/* Custom scrollbars for clean academic look */
+@layer components {
+  /* Inline code snippet chip — programming vibe */
+  .code-chip {
+    direction: ltr;
+    unicode-bidi: isolate;
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    font-weight: 700;
+    background: #2D1B0E;
+    color: #FCD34D;
+    padding: 0.15rem 0.55rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+    white-space: nowrap;
+  }
+  .code-chip-light {
+    direction: ltr;
+    unicode-bidi: isolate;
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.14);
+    color: #FCD34D;
+    border: 1px solid rgba(251, 191, 36, 0.35);
+    padding: 0.15rem 0.55rem;
+    border-radius: 0.5rem;
+    white-space: nowrap;
+  }
+
+  /* Dashed sticker badge — playful, rotated */
+  .sticker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-weight: 800;
+    font-size: 0.72rem;
+    padding: 0.28rem 0.85rem;
+    border-radius: 999px;
+    border: 2px dashed currentColor;
+    background: #fff;
+  }
+
+  /* Hand-cut button corners (RTL: notch on the left) */
+  .btn-cut {
+    border-radius: 1rem 1rem 1rem 0.35rem;
+  }
+  .btn-cut-alt {
+    border-radius: 1rem 1rem 0.35rem 1rem;
+  }
+
+  /* Terminal window frame */
+  .term {
+    direction: ltr;
+    unicode-bidi: isolate;
+    background: #2D1B0E;
+    border-radius: 1rem;
+    box-shadow: 0 18px 40px -14px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+  }
+  .term-bar {
+    display: flex;
+    gap: 0.4rem;
+    padding: 0.6rem 0.9rem;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .term-dot {
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 999px;
+  }
+  .term-body {
+    padding: 0.9rem 1rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    line-height: 1.9;
+  }
+}
+
+/* Warm custom scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #F6EBDD;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 3px;
+  background: #C4A88F;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #8A6A52;
+}
+
+::selection {
+  background: #FBBF24;
+  color: #291007;
 }

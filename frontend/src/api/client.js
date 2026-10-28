@@ -58,6 +58,18 @@ export const getMe = async () => {
   return response.data;
 };
 
+export const getProfessors = async () => {
+  const response = await apiClient.get('/auth/professors');
+  return response.data;
+};
+
+export const selectProfessor = async (professorId) => {
+  const response = await apiClient.put('/auth/select-professor', {
+    professor_id: professorId,
+  });
+  return response.data;
+};
+
 // Curriculum endpoints
 export const uploadCurriculum = async (file) => {
   const formData = new FormData();
@@ -67,6 +79,16 @@ export const uploadCurriculum = async (file) => {
       'Content-Type': 'multipart/form-data',
     },
   });
+  return response.data;
+};
+
+export const getDocuments = async () => {
+  const response = await apiClient.get('/curriculum');
+  return response.data;
+};
+
+export const getDocumentLessons = async (curriculumId) => {
+  const response = await apiClient.get(`/curriculum/${curriculumId}/lessons`);
   return response.data;
 };
 
@@ -93,6 +115,14 @@ export const getExam = async (id) => {
 
 export const togglePublishExam = async (id, isPublished = true) => {
   const response = await apiClient.patch(`/exams/${id}/publish`, { is_published: isPublished });
+  return response.data;
+};
+
+export const updateExamQuestion = async (examId, questionIndex, payload) => {
+  const response = await apiClient.patch(
+    `/exams/${examId}/questions/${questionIndex}`,
+    payload
+  );
   return response.data;
 };
 
@@ -131,6 +161,55 @@ export const getStudentDashboard = async (studentId) => {
 
 export const getProfessorDashboard = async () => {
   const response = await apiClient.get('/analytics/dashboard/professor');
+  return response.data;
+};
+
+
+// Question Bank endpoints
+export const getQuestionBank = async (params = {}) => {
+  const response = await apiClient.get('/question-bank', { params });
+  return response.data;
+};
+
+export const getQuestionBankSummary = async () => {
+  const response = await apiClient.get('/question-bank/summary');
+  return response.data;
+};
+
+export const getQuestionBankItem = async (id) => {
+  const response = await apiClient.get(`/question-bank/${id}`);
+  return response.data;
+};
+
+export const importQuestionBank = async (formData) => {
+  const response = await apiClient.post('/question-bank/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+export const classifyQuestion = async (payload) => {
+  const response = await apiClient.post('/question-bank/classify', payload);
+  return response.data;
+};
+
+export const updateQuestionBankItem = async (id, patchData) => {
+  const response = await apiClient.patch(`/question-bank/${id}`, patchData);
+  return response.data;
+};
+
+export const approveQuestionBankItem = async (id, actionData = {}) => {
+  const response = await apiClient.post(`/question-bank/${id}/approve`, actionData);
+  return response.data;
+};
+
+export const rejectQuestionBankItem = async (id, actionData = {}) => {
+  const response = await apiClient.post(`/question-bank/${id}/reject`, actionData);
+  return response.data;
+};
+
+export const getLearningReadinessStats = async () => {
+  const response = await apiClient.get('/question-bank/learning-stats');
   return response.data;
 };
 

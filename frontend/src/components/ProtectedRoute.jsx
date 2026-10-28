@@ -10,8 +10,8 @@ const ProtectedRoute = ({ children, role }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <LoadingSpinner size="lg" message="Authenticating session..." />
+      <div className="min-h-screen flex items-center justify-center bg-cream">
+        <LoadingSpinner size="lg" message="بنتحقق من صلاحياتك..." />
       </div>
     );
   }
@@ -22,24 +22,30 @@ const ProtectedRoute = ({ children, role }) => {
 
   if (role && user.role !== role) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-        <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-lg border border-gray-100 text-center">
-          <div className="w-16 h-16 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4">
+      <div className="min-h-screen flex items-center justify-center bg-cream px-4">
+        <div className="max-w-md w-full bg-paper p-8 rounded-2xl shadow-warm border border-cocoa-300/40 text-center">
+          <div className="w-16 h-16 bg-rose-50 text-rose-600 rounded-2xl rounded-br-md flex items-center justify-center mx-auto mb-4 -rotate-3">
             <ShieldAlert className="w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Access Denied (403)</h2>
-          <p className="text-gray-600 text-sm mb-6">
-            You do not have permission to access this area. This page is reserved for{' '}
-            <span className="font-semibold text-gray-800 capitalize">{role}</span> accounts, but your role is{' '}
-            <span className="font-semibold text-gray-800 capitalize">{user.role || 'unknown'}</span>.
+          <h2 className="text-2xl font-extrabold text-ink mb-2">مش مسموح (403)</h2>
+          <p className="text-cocoa-500 text-sm mb-6 leading-relaxed">
+            معندكش صلاحية تدخل الصفحة دي — دي مخصوصة لحسابات{' '}
+            <span className="font-bold text-cocoa-800">
+              {role === 'professor' ? 'الأستاذ' : 'الطالب'}
+            </span>
+            ، وإنت مسجّل بحساب{' '}
+            <span className="font-bold text-cocoa-800">
+              {user.role === 'professor' ? 'أستاذ' : user.role === 'student' ? 'طالب' : user.role || 'غير معروف'}
+            </span>
+            .
           </p>
           <div className="flex flex-col gap-2">
             <Link
               to={user.role === 'professor' ? '/professor/dashboard' : '/student/dashboard'}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-b from-clay-600 to-clay-800 hover:from-clay-500 text-white rounded-xl text-sm font-bold transition-colors shadow-warm btn-cut"
             >
               <ArrowLeft className="w-4 h-4" />
-              Go to My Dashboard
+              ارجع للوحتي
             </Link>
           </div>
         </div>

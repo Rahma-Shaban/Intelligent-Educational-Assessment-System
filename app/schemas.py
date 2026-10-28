@@ -43,6 +43,23 @@ class UserResponse(BaseModel):
     email: str
     role: str
     created_at: datetime
+    selected_professor_id: int | None = None
+
+
+class ProfessorOption(BaseModel):
+    """Compact professor entry for student selection lists."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    email: str
+
+
+class SelectProfessorRequest(BaseModel):
+    """Payload for a student to persist their chosen professor."""
+
+    professor_id: int = Field(..., gt=0, description="ID of the professor to enroll with")
 
 
 class TokenResponse(BaseModel):
@@ -79,6 +96,22 @@ class CurriculumResponse(BaseModel):
     filename: str
     lessons: list[LessonItem]
     uploaded_at: datetime
+    professor_id: int | None = None
+    collection_name: str | None = None
+    lesson_count: int = 0
+
+
+class CurriculumSummary(BaseModel):
+    """Document library entry for a professor's uploaded curriculum."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filename: str
+    uploaded_at: datetime
+    professor_id: int | None = None
+    lesson_count: int = 0
+    lessons: list[LessonItem] = Field(default_factory=list)
 
 
 # ==============================================================================
@@ -89,6 +122,11 @@ class CurriculumResponse(BaseModel):
 class ExamGenerateRequest(BaseModel):
     """Parameters for AI exam generation."""
 
+    curriculum_id: int = Field(
+        ...,
+        gt=0,
+        description="Textbook/document ID whose lessons are eligible for generation",
+    )
     lesson_id: str = Field(..., min_length=1, description="Curriculum lesson ID, e.g. '1-1'")
     topic: str = Field(default="", description="Assessment topic title")
     difficulty: str = Field(default="medium", pattern="^(easy|medium|hard)$")
@@ -119,6 +157,7 @@ class ExamListItem(BaseModel):
     question_count: int
     is_published: bool = False
     created_at: datetime
+    curriculum_id: int | None = None
 
 
 class ExamResponse(BaseModel):
@@ -136,6 +175,7 @@ class ExamResponse(BaseModel):
     question_count: int
     is_published: bool = False
     created_at: datetime
+    curriculum_id: int | None = None
     questions: list[dict[str, Any]] | None = None
     warnings: list[str] = Field(default_factory=list)
 
@@ -143,6 +183,33 @@ class ExamResponse(BaseModel):
 class ExamPublishRequest(BaseModel):
     """Parameters for publishing or unpublishing an assessment."""
     is_published: bool = True
+
+
+class RubricItemUpdate(BaseModel):
+    """Single grading criterion inside an edited question."""
+
+    criterion: str = Field(..., min_length=1)
+    description: str = Field(..., min_length=1)
+    points: float = Field(..., gt=0)
+
+
+class QuestionUpdateRequest(BaseModel):
+    """Professor-provided edits for one generated exam question."""
+
+    question: str = Field(..., min_length=1, description="Question prompt text")
+    question_type: str = Field(..., pattern="^(mcq|short_answer|essay)$")
+    difficulty: str = Field(..., pattern="^(easy|medium|hard)$")
+    bloom_level: str = Field(
+        ...,
+        pattern="^(remember|understand|apply|analyze|evaluate|create)$",
+    )
+    options: list[str] = Field(default_factory=list, description="MCQ options (exactly 4 for MCQ)")
+    correct_answer: str = Field(default="", description="MCQ correct letter (A-D)")
+    reference_answer: str = Field(..., min_length=1, description="Model answer used by grading")
+    explanation: str = Field(..., min_length=1, description="Teaching explanation of the answer")
+    max_score: float = Field(..., gt=0, description="Must equal the sum of rubric points")
+    rubric: list[RubricItemUpdate] = Field(..., min_length=1)
+    bloom_rationale: str | None = Field(default=None, description="Optional Bloom classification rationale")
 
 
 # ==============================================================================
@@ -226,3 +293,181 @@ class ProfessorDashboardResponse(BaseModel):
     class_analytics: dict[str, Any]
     clusters: list[ClusterResponse]
     summary: dict[str, Any]
+
+# ==============================================================================
+# Question Bank Schemas
+# ==============================================================================
+
+
+class QuestionBankItemBase(BaseModel):
+    """Base fields representing an assessment question."""
+
+    question_text: str = Field(..., description="The main question prompt or stem")
+    question_type: str = Field(default="mcq", description="mcq, essay, or short_answer")
+    options: list[str] | None = Field(default=None, description="Multiple-choice options list")
+    correct_option: str | None = Field(default=None, description="A, B, C, or D for MCQ")
+    correct_answer: str = Field(..., description="Canonical model answer or reference solution")
+    explanation: str | None = Field(default=None, description="Pedagogical explanation or reasoning")
+    subject: str | None = Field(default=None, description="Disciplinary subject area")
+    curriculum_id: str | None = Field(default=None, description="Curriculum document ID or reference")
+    unit: str | None = Field(default=None, description="Unit name or code")
+    chapter: str | None = Field(default=None, description="Chapter title or number")
+    lesson: str | None = Field(default=None, description="Lesson title or code")
+    page_number: str | None = Field(default=None, description="Verified source page number")
+    bloom_level: str | None = Field(default=None, description="Remember, Understand, Apply, Analyze, Evaluate, Create")
+    difficulty: str | None = Field(default=None, description="Easy, Medium, Hard, Unknown")
+
+
+class QuestionBankItemCreate(BaseModel):
+    """Payload for manual question entry or batch item ingestion."""
+
+    question_id: str | None = None
+    question_text: str = Field(..., min_length=3)
+    question_type: str = Field(default="mcq")
+    options: list[str] | None = None
+    correct_option: str | None = None
+    correct_answer: str = Field(...)
+    explanation: str | None = None
+    subject: str | None = None
+    curriculum_id: str | None = None
+    unit: str | None = None
+    chapter: str | None = None
+    lesson: str | None = None
+    page_number: str | None = None
+    bloom_level: str | None = None
+    difficulty: str | None = None
+    auto_classify: bool = Field(default=True, description="Whether to ground and classify with curriculum RAG")
+
+
+class QuestionBankItemUpdate(BaseModel):
+    """Fields that can be updated by an instructor during question review."""
+
+    question_text: str | None = None
+    options: list[str] | None = None
+    correct_option: str | None = None
+    correct_answer: str | None = None
+    explanation: str | None = None
+    subject: str | None = None
+    unit: str | None = None
+    chapter: str | None = None
+    lesson: str | None = None
+    page_number: str | None = None
+    bloom_level: str | None = None
+    difficulty: str | None = None
+    classification_status: str | None = None
+
+
+class QuestionBankReviewAction(BaseModel):
+    """Teacher review decision payload."""
+
+    corrections: dict[str, Any] | None = Field(
+        default=None, description="Dictionary of instructor corrections"
+    )
+    notes: str | None = Field(default=None, description="Instructor review comments or rationale")
+
+
+class QuestionBankItemResponse(BaseModel):
+    """Full question bank entity including review lifecycle and grounded evidence."""
+
+    id: int
+    question_id: str
+    original_question_id: str | None = None
+    question_type: str
+    question_text: str
+    options: list[str] = Field(default_factory=list)
+    correct_option: str | None = None
+    correct_answer: str
+    explanation: str | None = None
+    subject: str | None = None
+    curriculum_id: str | None = None
+    unit: str | None = None
+    chapter: str | None = None
+    lesson: str | None = None
+    page_number: str | None = None
+    bloom_level: str | None = None
+    difficulty: str | None = None
+    learning_objective: str | None = None
+    classification_reasoning: str | None = None
+    classification_confidence: float | None = None
+    grounding_confidence: float | None = None
+    classification_status: str
+    review_status: str
+    needs_teacher_review: bool
+    review_reasons: list[str] = Field(default_factory=list)
+    review_notes: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: str | None = None
+    created_by: int | None = None
+    teacher_corrections: dict[str, Any] | None = None
+    source_chunk_ids: list[str] = Field(default_factory=list)
+    source_evidence: str | None = None
+    embedding_status: str
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class QuestionBankPaginatedResponse(BaseModel):
+    """Paginated list of question bank items."""
+
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    items: list[QuestionBankItemResponse]
+
+
+class QuestionBankStatsResponse(BaseModel):
+    """Aggregate statistics for the question bank dashboard."""
+
+    total_questions: int
+    approved_count: int
+    rejected_count: int
+    needs_review_count: int
+    pending_review_count: int
+    difficulty_distribution: dict[str, int]
+    bloom_distribution: dict[str, int]
+    type_distribution: dict[str, int]
+
+
+class QuestionClassificationRequest(BaseModel):
+    """Request payload for on-demand curriculum-grounded classification."""
+
+    question_text: str = Field(..., min_length=3)
+    question_type: str = Field(default="mcq")
+    options: list[str] | None = None
+    correct_option: str | None = None
+    correct_answer: str = Field(default="")
+    explanation: str | None = None
+    curriculum_id: int | None = None
+    collection_name: str | None = None
+    top_k: int = Field(default=5, ge=1, le=20)
+    confidence_threshold: float = Field(default=0.70, ge=0.0, le=1.0)
+    persist: bool = Field(default=False, description="Persist immediately as a pending_review item in question bank")
+
+
+class QuestionClassificationResponse(BaseModel):
+    """Output of curriculum-grounded classification."""
+
+    question_id: str
+    question_text: str
+    question_type: str
+    options: list[str] = Field(default_factory=list)
+    correct_option: str | None = None
+    correct_answer: str
+    explanation: str | None = None
+    subject: str | None = None
+    unit: str | None = None
+    lesson: str | None = None
+    page_number: str | None = None
+    bloom_level: str
+    difficulty: str
+    classification_reasoning: str
+    classification_confidence: float | None = None
+    grounding_confidence: float | None = None
+    classification_status: str
+    source_chunk_ids: list[str] = Field(default_factory=list)
+    source_evidence: str | None = None
+    needs_teacher_review: bool
+    review_reasons: list[str] = Field(default_factory=list)
+    supporting_chunks: list[dict[str, Any]] = Field(default_factory=list)
+    persisted_item: QuestionBankItemResponse | None = None

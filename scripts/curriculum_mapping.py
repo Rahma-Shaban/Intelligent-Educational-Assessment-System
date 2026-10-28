@@ -238,11 +238,19 @@ def _safely_get_vectorstore(
         return None
 
 
-def _normalize_relevance_score(raw_score: Any) -> float:
+def _normalize_relevance_score(raw_score: Any, is_distance: bool = True) -> float:
     """
-    Normalizes Chroma distance / similarity scores to a [0.0, 1.0] confidence scale.
-    Chroma cosine distance is in [0, 2] where 0 is identical (similarity = 1 - distance/2 or 1 - distance).
-    LangChain relevance score is typically in [0, 1].
+    Normalizes Chroma distance or similarity scores to a [0.0, 1.0] scale where
+    1.0 means identical/maximally relevant and 0.0 means unrelated.
+
+    When raw_score is a distance (default for Chroma similarity_search_with_score):
+      - In Chroma, cosine distance is d = 1 - cos_sim, so cos_sim = 1 - d.
+      - If d in [0, 1], similarity is 1.0 - d.
+      - If d in (1, 2], similarity is max(0.0, 1.0 - (d / 2.0)).
+      - If d <= 0, similarity is 1.0.
+
+    When raw_score is already a relevance/similarity score (is_distance=False):
+      - Clamped to [0.0, 1.0].
     """
     if raw_score is None:
         return 0.0
@@ -251,17 +259,17 @@ def _normalize_relevance_score(raw_score: Any) -> float:
     except (ValueError, TypeError):
         return 0.0
 
-    # If score is already between 0 and 1
-    if 0.0 <= val <= 1.0:
-        return round(val, 4)
-    # If it's a distance where smaller is closer
-    if val < 0.0:
-        return 0.0
-    if val <= 2.0:
-        # Cosine distance
-        return round(max(0.0, 1.0 - (val / 2.0)), 4)
-    return 0.0
+    if not is_distance:
+        return round(max(0.0, min(1.0, val)), 4)
 
+    # raw_score is distance: smaller distance means HIGHER similarity
+    if val <= 0.0:
+        return 1.0
+    if val <= 1.0:
+        return round(1.0 - val, 4)
+    if val <= 2.0:
+        return round(max(0.0, 1.0 - (val / 2.0)), 4)
+    return round(max(0.0, 1.0 / (1.0 + val)), 4)
 
 # ==============================================================================
 # 4. Single Question Curriculum Mapping
@@ -348,6 +356,7 @@ def map_single_question(
 
     # Attempt retrieval
     retrieved_items: list[tuple[Any, float]] = []
+    is_distance = False
     try:
         # Check if vectorstore supports relevance scores
         if hasattr(vstore, "similarity_search_with_relevance_scores"):
@@ -356,15 +365,18 @@ def map_single_question(
                 k=top_k,
                 filter={"lesson_id": lesson_id} if lesson_id else None,
             )
+            is_distance = False
         elif hasattr(vstore, "similarity_search_with_score"):
             retrieved_items = vstore.similarity_search_with_score(
                 query=query_str,
                 k=top_k,
                 filter={"lesson_id": lesson_id} if lesson_id else None,
             )
+            is_distance = True
         else:
             docs = vstore.similarity_search(query=query_str, k=top_k)
             retrieved_items = [(doc, 0.8) for doc in docs]
+            is_distance = False
     except Exception as exc:
         logger.warning("Retrieval error for question %s: %s", qid, exc)
         retrieved_items = []
@@ -374,11 +386,14 @@ def map_single_question(
         try:
             if hasattr(vstore, "similarity_search_with_relevance_scores"):
                 retrieved_items = vstore.similarity_search_with_relevance_scores(query=query_str, k=top_k)
+                is_distance = False
             elif hasattr(vstore, "similarity_search_with_score"):
                 retrieved_items = vstore.similarity_search_with_score(query=query_str, k=top_k)
+                is_distance = True
             elif hasattr(vstore, "similarity_search"):
                 docs = vstore.similarity_search(query=query_str, k=top_k)
                 retrieved_items = [(doc, 0.8) for doc in docs]
+                is_distance = False
         except Exception:
             retrieved_items = []
 
@@ -422,7 +437,7 @@ def map_single_question(
         p_start = meta.get("pdf_page_start") or meta.get("printed_page_start")
         p_end = meta.get("pdf_page_end") or meta.get("printed_page_end")
 
-        sim_score = _normalize_relevance_score(raw_score)
+        sim_score = _normalize_relevance_score(raw_score, is_distance=is_distance)
         excerpt = extract_evidence_excerpt(getattr(doc, "page_content", ""), query_keywords)
 
         supporting_chunks.append({

@@ -15,6 +15,7 @@ from app.routers import (
     auth_router,
     curriculum_router,
     exam_router,
+    question_bank_router,
 )
 from scripts.config import LLM_PROVIDER
 from scripts.generation import validate_configuration
@@ -48,14 +49,33 @@ app.add_middleware(
 def on_startup() -> None:
     """Initialize SQLite database tables and ensure schema migrations."""
     Base.metadata.create_all(bind=engine)
+    migrations = [
+        ("exams", "is_published", "ALTER TABLE exams ADD COLUMN is_published BOOLEAN DEFAULT 0"),
+        (
+            "curriculums",
+            "professor_id",
+            "ALTER TABLE curriculums ADD COLUMN professor_id INTEGER REFERENCES users(id)",
+        ),
+        (
+            "curriculums",
+            "collection_name",
+            "ALTER TABLE curriculums ADD COLUMN collection_name VARCHAR(255)",
+        ),
+        (
+            "users",
+            "selected_professor_id",
+            "ALTER TABLE users ADD COLUMN selected_professor_id INTEGER REFERENCES users(id)",
+        ),
+    ]
     try:
         with engine.connect() as conn:
             inspector = inspect(engine)
-            if "exams" in inspector.get_table_names():
-                cols = [c["name"] for c in inspector.get_columns("exams")]
-                if "is_published" not in cols:
-                    conn.execute(text("ALTER TABLE exams ADD COLUMN is_published BOOLEAN DEFAULT 0"))
-                    conn.commit()
+            for table, column, ddl in migrations:
+                if table in inspector.get_table_names():
+                    cols = [c["name"] for c in inspector.get_columns(table)]
+                    if column not in cols:
+                        conn.execute(text(ddl))
+                        conn.commit()
     except Exception:
         pass
 
@@ -66,6 +86,7 @@ app.include_router(curriculum_router.router, prefix="/api/curriculum")
 app.include_router(exam_router.router, prefix="/api/exams")
 app.include_router(attempt_router.router, prefix="/api/attempts")
 app.include_router(analytics_router.router, prefix="/api/analytics")
+app.include_router(question_bank_router.router, prefix="/api")
 
 
 @app.get(

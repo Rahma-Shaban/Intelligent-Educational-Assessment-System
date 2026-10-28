@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Button from '../components/ui/Button';
 import Alert from '../components/ui/Alert';
-import { GraduationCap, Mail, Lock, User, UserPlus } from 'lucide-react';
+import { Mail, Lock, User, UserPlus, GraduationCap, BookOpen } from 'lucide-react';
+import { BrandMark } from '../components/Layout';
 
 const RegisterPage = () => {
   const [name, setName] = useState('');
@@ -21,7 +22,7 @@ const RegisterPage = () => {
     setError('');
 
     if (password.length < 6) {
-      setError('Password must be at least 6 characters long.');
+      setError('كلمة المرور لازم تكون ٦ حروف على الأقل.');
       return;
     }
 
@@ -39,7 +40,7 @@ const RegisterPage = () => {
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.message ||
-        'Registration failed. Please check your information and try again.';
+        'حصلت مشكلة في التسجيل، راجع بياناتك وحاول مجددا.';
       setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
     } finally {
       setLoading(false);
@@ -47,42 +48,58 @@ const RegisterPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-slate-50 to-blue-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center">
-          <div className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-200">
-            <GraduationCap className="w-8 h-8" />
+    <div className="min-h-screen bg-cream flex flex-col lg:flex-row">
+      {/* Branded art panel */}
+      <div className="relative lg:w-[42%] bg-gradient-to-bl from-teal-700 via-teal-800 to-cocoa-950 text-white px-8 py-10 lg:px-12 lg:py-12 flex flex-col overflow-hidden">
+        <div className="absolute -top-20 -start-20 w-64 h-64 rounded-full bg-teal-500/20 blur-3xl" />
+        <span className="code-chip-light absolute top-28 end-8 rotate-2 hidden md:inline-block">import ias</span>
+
+        <div className="flex items-center gap-3 relative z-10">
+          <BrandMark size="lg" />
+          <div>
+            <h2 className="font-display text-3xl leading-none pt-1">
+              IA<span className="text-gold-300">S</span>
+            </h2>
+            <p className="text-[12px] font-semibold text-teal-100 mt-1">منصة التقييم التعليمي الذكية</p>
           </div>
         </div>
-        <h2 className="mt-4 text-center text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
-          Create IEAS Account
-        </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
-          Join as a Professor to design exams or as a Student to take assessments
-        </p>
+
+        <div className="relative z-10 mt-10 lg:mt-auto mb-8">
+          <h1 className="font-display text-4xl leading-snug">
+            انضم لمنصتنا
+            <br />
+            <span className="text-gold-300">وابدأ رحلتك 🚀</span>
+          </h1>
+          <ul className="mt-6 space-y-3 text-sm text-teal-100">
+            <li className="flex items-center gap-2.5">
+              <GraduationCap className="w-4.5 h-4.5 text-gold-300 shrink-0" />
+              الأستاذ: يرفع المنهج ويولّد امتحانات ذكية
+            </li>
+            <li className="flex items-center gap-2.5">
+              <BookOpen className="w-4.5 h-4.5 text-gold-300 shrink-0" />
+              الطالب: يمتحن ويلاقي نتيجته وتحليله فوراً
+            </li>
+          </ul>
+        </div>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4">
-        <div className="bg-white py-8 px-6 sm:px-10 shadow-xl shadow-slate-200/60 rounded-2xl border border-gray-100">
+      {/* Form panel */}
+      <div className="flex-1 flex flex-col justify-center px-6 py-12 sm:px-12 lg:px-20">
+        <div className="w-full max-w-md mx-auto">
+          <h2 className="font-display text-3xl text-ink">أنشئ حساب جديد ✨</h2>
+          <p className="text-sm text-cocoa-500 mt-1 mb-7">اختار نوع الحساب وكمّل بياناتك</p>
+
           {error && (
-            <Alert
-              type="error"
-              className="mb-6"
-              onClose={() => setError('')}
-              message={error}
-            />
+            <Alert type="error" className="mb-5" onClose={() => setError('')} message={error} />
           )}
 
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div>
-              <label
-                htmlFor="name"
-                className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5"
-              >
-                Full Name
+              <label htmlFor="name" className="block text-[13px] font-bold text-cocoa-800 mb-1.5">
+                الاسم بالكامل
               </label>
-              <div className="relative rounded-lg shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+              <div className="relative rounded-2xl">
+                <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none text-cocoa-300">
                   <User className="w-4 h-4" />
                 </div>
                 <input
@@ -92,21 +109,18 @@ const RegisterPage = () => {
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Dr. Jane Doe or Alex Smith"
-                  className="block w-full pl-10 pr-3 py-2.5 sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-colors"
+                  placeholder="د. أحمد محمود أو محمد سمير"
+                  className="block w-full ps-11 pe-4 py-3 text-sm bg-white border-2 border-cocoa-300/60 rounded-2xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 transition outline-none"
                 />
               </div>
             </div>
 
             <div>
-              <label
-                htmlFor="email"
-                className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5"
-              >
-                Email Address
+              <label htmlFor="email" className="block text-[13px] font-bold text-cocoa-800 mb-1.5">
+                البريد الإلكتروني
               </label>
-              <div className="relative rounded-lg shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+              <div className="relative rounded-2xl">
+                <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none text-cocoa-300">
                   <Mail className="w-4 h-4" />
                 </div>
                 <input
@@ -116,21 +130,18 @@ const RegisterPage = () => {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="user@university.edu"
-                  className="block w-full pl-10 pr-3 py-2.5 sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-colors"
+                  placeholder="user@school.edu.eg"
+                  className="block w-full ps-11 pe-4 py-3 text-sm bg-white border-2 border-cocoa-300/60 rounded-2xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 transition outline-none"
                 />
               </div>
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5"
-              >
-                Password (min 6 chars)
+              <label htmlFor="password" className="block text-[13px] font-bold text-cocoa-800 mb-1.5">
+                كلمة المرور (٦ حروف على الأقل)
               </label>
-              <div className="relative rounded-lg shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+              <div className="relative rounded-2xl">
+                <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none text-cocoa-300">
                   <Lock className="w-4 h-4" />
                 </div>
                 <input
@@ -141,37 +152,37 @@ const RegisterPage = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="block w-full pl-10 pr-3 py-2.5 sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-colors"
+                  className="block w-full ps-11 pe-4 py-3 text-sm bg-white border-2 border-cocoa-300/60 rounded-2xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 transition outline-none"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
-                Account Role
+              <label className="block text-[13px] font-bold text-cocoa-800 mb-2">
+                نوع الحساب
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
                   onClick={() => setRole('student')}
-                  className={`py-2.5 px-3 rounded-lg border text-sm font-medium transition-all text-center ${
+                  className={`py-3 px-3 rounded-2xl border-2 text-sm font-bold transition-all text-center ${
                     role === 'student'
-                      ? 'bg-indigo-50 border-indigo-600 text-indigo-700 ring-1 ring-indigo-600'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                      ? 'bg-teal-50 border-teal-700 text-teal-800 -rotate-1 shadow-warm'
+                      : 'border-cocoa-300/60 text-cocoa-500 hover:bg-sand/60'
                   }`}
                 >
-                  Student
+                  📚 طالب
                 </button>
                 <button
                   type="button"
                   onClick={() => setRole('professor')}
-                  className={`py-2.5 px-3 rounded-lg border text-sm font-medium transition-all text-center ${
+                  className={`py-3 px-3 rounded-2xl border-2 text-sm font-bold transition-all text-center ${
                     role === 'professor'
-                      ? 'bg-indigo-50 border-indigo-600 text-indigo-700 ring-1 ring-indigo-600'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                      ? 'bg-clay-50 border-clay-700 text-clay-800 rotate-1 shadow-warm'
+                      : 'border-cocoa-300/60 text-cocoa-500 hover:bg-sand/60'
                   }`}
                 >
-                  Professor
+                  🎓 أستاذ
                 </button>
               </div>
             </div>
@@ -181,24 +192,19 @@ const RegisterPage = () => {
               variant="primary"
               size="lg"
               loading={loading}
-              className="w-full mt-4"
+              className="w-full mt-3 btn-cut"
               icon={UserPlus}
             >
-              Complete Registration
+              إنشاء الحساب
             </Button>
           </form>
 
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600">
-              Already have an account?{' '}
-              <Link
-                to="/login"
-                className="font-medium text-indigo-600 hover:text-indigo-500 hover:underline"
-              >
-                Sign in here &rarr;
-              </Link>
-            </p>
-          </div>
+          <p className="mt-6 text-[13.5px] text-cocoa-500 text-center">
+            عندك حساب بالفعل؟{' '}
+            <Link to="/login" className="font-bold text-clay-700 hover:text-clay-600 hover:underline">
+              سجّل دخول من هنا
+            </Link>
+          </p>
         </div>
       </div>
     </div>

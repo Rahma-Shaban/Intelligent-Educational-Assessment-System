@@ -23,21 +23,21 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-          <div className="max-w-md w-full bg-white rounded-2xl shadow-lg border border-gray-200 p-6 text-center space-y-4">
-            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto text-xl font-bold">
+        <div className="min-h-screen flex items-center justify-center bg-cream p-4">
+          <div className="max-w-md w-full bg-paper rounded-2xl shadow-warm border border-cocoa-300/40 p-6 text-center space-y-4">
+            <div className="w-12 h-12 rounded-2xl rounded-br-sm bg-rose-100 text-rose-600 flex items-center justify-center mx-auto text-xl font-bold -rotate-3">
               !
             </div>
-            <h2 className="text-xl font-extrabold text-gray-900">Something went wrong</h2>
-            <p className="text-sm text-gray-600">
-              An unexpected error occurred while rendering this view. You can return to your dashboard or previous page.
+            <h2 className="text-xl font-extrabold text-ink">حصلت مشكلة غير متوقعة</h2>
+            <p className="text-sm text-cocoa-500 leading-relaxed">
+              حصل خطأ وهو بنعرض الصفحة دي. تقدر ترجع للصفحة اللي فاتت أو للوحة التحكم.
             </p>
             <div className="flex justify-center gap-3 pt-2">
               <Button variant="secondary" onClick={() => window.history.back()}>
-                Go Back
+                رجوع
               </Button>
-              <Button variant="primary" onClick={this.handleReset}>
-                Return to Dashboard
+              <Button variant="primary" onClick={this.handleReset} className="btn-cut">
+                ارجع للرئيسية
               </Button>
             </div>
           </div>
