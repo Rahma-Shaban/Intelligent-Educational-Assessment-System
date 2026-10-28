@@ -47,14 +47,14 @@ const LoginPage = () => {
         <div className="absolute bottom-10 end-0 w-52 h-52 rounded-full bg-gold-500/10 blur-2xl" />
 
         {/* floating code chips */}
-        <span className="code-chip-light absolute top-24 end-8 rotate-3 hidden md:inline-block">print("Hello, IQYAS")</span>
+        <span className="code-chip-light absolute top-24 end-8 rotate-3 hidden md:inline-block">print("Hello, IAS")</span>
         <span className="code-chip-light absolute top-40 end-28 -rotate-2 hidden md:inline-block">for attempt in exams:</span>
 
         <div className="flex items-center gap-3 relative z-10">
           <BrandMark size="lg" />
           <div>
             <h2 className="font-display text-3xl leading-none pt-1">
-              IQ<span className="text-gold-300">YAS</span>
+              IA<span className="text-gold-300">S</span>
             </h2>
             <p className="text-[12px] font-semibold text-clay-100 mt-1">منصة التقييم التعليمي الذكية</p>
           </div>
@@ -82,7 +82,7 @@ const LoginPage = () => {
               <span className="term-dot bg-teal-400" />
             </div>
             <div className="term-body text-gold-200">
-              <p><span className="text-teal-300">$</span> iqyas generate --curriculum <span className="text-white">CS-Bac2.pdf</span></p>
+              <p><span className="text-teal-300">$</span> ias generate --curriculum <span className="text-white">CS-Bac2.pdf</span></p>
               <p className="text-cocoa-300"># retrieving context ... ✓</p>
               <p><span className="text-teal-300">$</span> grading <span className="text-gold-300">--instant</span> <span className="text-cocoa-300"># ⚡</span></p>
             </div>

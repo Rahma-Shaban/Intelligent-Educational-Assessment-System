@@ -91,7 +91,7 @@ const DocumentLibrary = () => {
     setUploadError('');
     setUploadResult(null);
     if (!selectedFile.name.toLowerCase().endsWith('.pdf')) {
-      setUploadError('لازم ترفع ملف PDF صحيح.');
+      setUploadError('لازم ترفع ملف PDF.');
       return;
     }
     if (selectedFile.size > 50 * 1024 * 1024) {
@@ -117,7 +117,7 @@ const DocumentLibrary = () => {
       const detail =
         err.response?.data?.detail ||
         err.response?.data?.message ||
-        'فشل رفع وفهرسة ملف المنهج. حاول تاني.';
+        'فشل رفع وفهرسة ملف المنهج. حاول مجددا.';
       setUploadError(typeof detail === 'string' ? detail : JSON.stringify(detail));
     } finally {
       setUploading(false);
@@ -178,9 +178,9 @@ const DocumentLibrary = () => {
             <div className="w-14 h-14 bg-clay-100 text-clay-600 rounded-2xl rounded-br-md flex items-center justify-center mx-auto mb-3 -rotate-3">
               <Library className="w-7 h-7" />
             </div>
-            <h3 className="text-lg font-extrabold text-ink">المكتبة فاضية لسه</h3>
+            <h3 className="text-lg font-extrabold text-ink">المكتبة فارغة </h3>
             <p className="text-sm text-cocoa-500 mt-1 max-w-md mx-auto">
-              ارفع أول كتاب من الأسفل، وبعد الفهرسة هيظهر هنا بقائمة دروسه.
+              ارفع أول كتاب من الأسفل، وبعد الفهرسة هيظهر بقائمة دروسه.
             </p>
           </Card>
         ) : (
@@ -263,7 +263,7 @@ const DocumentLibrary = () => {
                       <div className="border border-sand rounded-xl divide-y divide-sand max-h-44 overflow-y-auto bg-cream/60">
                         {doc.lessons.length === 0 ? (
                           <p className="text-xs text-cocoa-500 p-3 text-center">
-                            مفيش دروس مسجّلة لهذا الكتاب.
+                            لا يوجد دروس مسجّلة لهذا الكتاب.
                           </p>
                         ) : (
                           doc.lessons.map((lesson, idx) => (

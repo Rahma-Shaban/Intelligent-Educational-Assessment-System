@@ -40,7 +40,7 @@ const RegisterPage = () => {
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.message ||
-        'حصلت مشكلة في التسجيل، راجع بياناتك وحاول تاني.';
+        'حصلت مشكلة في التسجيل، راجع بياناتك وحاول مجددا.';
       setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
     } finally {
       setLoading(false);
@@ -52,13 +52,13 @@ const RegisterPage = () => {
       {/* Branded art panel */}
       <div className="relative lg:w-[42%] bg-gradient-to-bl from-teal-700 via-teal-800 to-cocoa-950 text-white px-8 py-10 lg:px-12 lg:py-12 flex flex-col overflow-hidden">
         <div className="absolute -top-20 -start-20 w-64 h-64 rounded-full bg-teal-500/20 blur-3xl" />
-        <span className="code-chip-light absolute top-28 end-8 rotate-2 hidden md:inline-block">import iqyas</span>
+        <span className="code-chip-light absolute top-28 end-8 rotate-2 hidden md:inline-block">import ias</span>
 
         <div className="flex items-center gap-3 relative z-10">
           <BrandMark size="lg" />
           <div>
             <h2 className="font-display text-3xl leading-none pt-1">
-              IQ<span className="text-gold-300">YAS</span>
+              IA<span className="text-gold-300">S</span>
             </h2>
             <p className="text-[12px] font-semibold text-teal-100 mt-1">منصة التقييم التعليمي الذكية</p>
           </div>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getProfessorDashboard, getExams } from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react';
 
 const ProfessorDashboard = () => {
+  const { user } = useAuth();
   const [dashboardData, setDashboardData] = useState(null);
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,7 +52,7 @@ const ProfessorDashboard = () => {
         }
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
-        setError('معلش، قدرنا نجيب جزء من بيانات اللوحة بس. بنستخدم المتاح حالياً.');
+        setError(' قدرنا نجيب جزء من بيانات اللوحة فقط. يتم استخدام المتاح حالياً.');
       } finally {
         setLoading(false);
       }
@@ -60,7 +62,7 @@ const ProfessorDashboard = () => {
   }, []);
 
   if (loading) {
-    return <LoadingSpinner size="lg" message="جاري تحميل مساحة الأستاذ..." />;
+    return <LoadingSpinner size="lg" message="جاري تحميل المنصة ..." />;
   }
 
   // Derive stats either from dashboard endpoint or exam collection
@@ -102,12 +104,11 @@ const ProfessorDashboard = () => {
         <span className="code-chip-light absolute top-5 end-6 rotate-2 hidden md:inline-block">generate_exam(lesson=...)</span>
         <div className="absolute -bottom-16 -start-10 w-56 h-56 rounded-full bg-gold-400/10 blur-2xl" />
         <div className="relative z-10">
-          <span className="text-xs font-bold text-gold-300">مساحة الأستاذ</span>
-          <h1 className="font-display text-3xl md:text-4xl mt-1 leading-snug">
-            أهلاً بيك يا <span className="text-gold-300">صمد الدفة</span> 🚢
+          <h1 className="font-display text-3xl md:text-4xl leading-snug">
+            أهلاً أ. <span className="text-gold-300">{user?.name || 'أستاذ'}</span>
           </h1>
           <p className="text-clay-100 text-sm mt-2 max-w-xl leading-relaxed">
-            ولّد امتحانات من المنهج بتاعك، وتابع مستوى الطلبة والتحليلات كلها من مكان واحد.
+            ولّد امتحانات وتابع مستوى الطلبة.
           </p>
           <span className="sticker border-gold-400/60 bg-white/10 text-gold-200 mt-4 inline-flex">
             📘 Programming & Computer Science — تانية بكالوريا
@@ -136,7 +137,6 @@ const ProfessorDashboard = () => {
             <div>
               <p className="text-xs font-bold text-cocoa-500">إجمالي الامتحانات</p>
               <h3 className="font-display text-3xl text-clay-700 mt-1">{totalExams}</h3>
-              <p className="text-[11px] text-cocoa-500 font-semibold mt-1">امتحانات جاهزة</p>
             </div>
             <div className="w-12 h-12 bg-clay-100 text-clay-700 rounded-2xl rounded-br-sm flex items-center justify-center">
               <BookOpen className="w-6 h-6" />
@@ -149,7 +149,6 @@ const ProfessorDashboard = () => {
             <div>
               <p className="text-xs font-bold text-cocoa-500">طلبة مشاركين</p>
               <h3 className="font-display text-3xl text-teal-700 mt-1">{totalStudents}</h3>
-              <p className="text-[11px] text-cocoa-500 font-semibold mt-1">عبر كل الشُعب</p>
             </div>
             <div className="w-12 h-12 bg-teal-50 text-teal-700 rounded-2xl rounded-br-sm flex items-center justify-center">
               <Users className="w-6 h-6" />
@@ -162,7 +161,6 @@ const ProfessorDashboard = () => {
             <div>
               <p className="text-xs font-bold text-cocoa-500">متوسط الدرجات</p>
               <h3 className="font-display text-3xl text-gold-600 mt-1">{avgScore}</h3>
-              <p className="text-[11px] text-cocoa-500 font-semibold mt-1">على مستوى الفصل</p>
             </div>
             <div className="w-12 h-12 bg-gold-100 text-gold-600 rounded-2xl rounded-br-sm flex items-center justify-center">
               <Award className="w-6 h-6" />
@@ -175,7 +173,6 @@ const ProfessorDashboard = () => {
             <div>
               <p className="text-xs font-bold text-cocoa-500">محاولات مسلّمة</p>
               <h3 className="font-display text-3xl text-cocoa-800 mt-1">{totalAttempts}</h3>
-              <p className="text-[11px] text-cocoa-500 font-semibold mt-1">اتصحّحت آلياً</p>
             </div>
             <div className="w-12 h-12 bg-sand text-cocoa-800 rounded-2xl rounded-br-sm flex items-center justify-center">
               <TrendingUp className="w-6 h-6" />

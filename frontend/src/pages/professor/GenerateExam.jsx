@@ -247,9 +247,6 @@ const GenerateExam = () => {
       <div className="relative">
         <span className="code-chip absolute -top-3 end-0 rotate-2 hidden md:inline-block">def generate_exam(): ✨</span>
         <h1 className="font-display text-3xl md:text-4xl text-ink">إنشاء امتحان ✨</h1>
-        <p className="text-sm text-cocoa-500 mt-1 leading-relaxed">
-          اختار الكتاب الأول، وبعدين الدرس والمستوى — الأسئلة بتتولّد بالإنجليزي من محتوى الكتاب المختار بس.
-        </p>
       </div>
 
       {error && (

@@ -62,7 +62,7 @@ const StudentDashboard = () => {
   }, [user]);
 
   if (loading) {
-    return <LoadingSpinner size="lg" message="جاري تحميل بوابتك يا بطل..." />;
+    return <LoadingSpinner size="lg" message="جاري تحميل المنصة... " />;
   }
 
   // Derive metrics

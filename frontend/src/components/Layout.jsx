@@ -12,7 +12,6 @@ import {
   Menu,
   X,
   ChevronLeft,
-  Code2,
   User as UserIcon,
 } from 'lucide-react';
 
@@ -66,7 +65,7 @@ const Layout = () => {
       <div className="md:hidden bg-cocoa-950 border-b border-white/10 px-4 py-3 flex items-center justify-between sticky top-0 z-40">
         <div className="flex items-center gap-2.5">
           <BrandMark size="sm" />
-          <span className="font-display text-gold-400 text-lg leading-none pt-1">IQYAS</span>
+          <span className="font-display text-gold-400 text-lg leading-none pt-1">IAS</span>
         </div>
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -97,7 +96,7 @@ const Layout = () => {
             <BrandMark />
             <div>
               <h1 className="font-display text-2xl text-gold-400 leading-none pt-1">
-                IQ<span className="text-white">YAS</span>
+                IA<span className="text-white">S</span>
               </h1>
               <p className="text-[11px] font-semibold text-cocoa-300 mt-0.5">
                 منصة التقييم الذكية
@@ -167,10 +166,6 @@ const Layout = () => {
 
           {/* Logout at bottom */}
           <div className="p-4 border-t border-white/10">
-            <div className="flex items-center gap-2 px-3.5 pb-3 text-[11px] text-cocoa-500 font-code" dir="ltr">
-              <Code2 className="w-3.5 h-3.5 text-gold-500/60" />
-              <span>IQYAS v1.0 — Smart Assessment</span>
-            </div>
             <button
               onClick={handleLogout}
               className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-bold text-rose-300 hover:bg-rose-500/10 transition-colors"
