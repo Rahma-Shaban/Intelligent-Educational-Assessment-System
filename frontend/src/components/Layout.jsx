@@ -11,11 +11,25 @@ import {
   LogOut,
   Menu,
   X,
-  GraduationCap,
-  ChevronRight,
-  ShieldCheck,
+  ChevronLeft,
   User as UserIcon,
 } from 'lucide-react';
+
+export const BrandMark = ({ size = 'md' }) => {
+  const dims =
+    size === 'lg'
+      ? 'w-12 h-12 text-xl rounded-2xl'
+      : size === 'sm'
+      ? 'w-8 h-8 text-xs rounded-lg'
+      : 'w-10 h-10 text-base rounded-xl';
+  return (
+    <div
+      className={`${dims} bg-gradient-to-br from-gold-400 to-gold-500 text-clay-950 font-code font-bold flex items-center justify-center shadow-warm -rotate-3 select-none shrink-0`}
+    >
+      &lt;/&gt;
+    </div>
+  );
+};
 
 const Layout = () => {
   const { user, logout } = useAuth();
@@ -30,35 +44,33 @@ const Layout = () => {
   const isProfessor = user?.role === 'professor';
 
   const professorNav = [
-    { name: 'Dashboard', path: '/professor/dashboard', icon: LayoutDashboard },
-    { name: 'Upload Curriculum', path: '/professor/curriculum', icon: FileUp },
-    { name: 'Generate Exam', path: '/professor/generate', icon: Sparkles },
-    { name: 'Exam List', path: '/professor/exams', icon: BookOpen },
-    { name: 'Analytics', path: '/professor/analytics', icon: BarChart3 },
+    { name: 'الرئيسية', path: '/professor/dashboard', icon: LayoutDashboard },
+    { name: 'رفع المنهج', path: '/professor/curriculum', icon: FileUp },
+    { name: 'إنشاء امتحان', path: '/professor/generate', icon: Sparkles },
+    { name: 'قائمة الامتحانات', path: '/professor/exams', icon: BookOpen },
+    { name: 'الإحصائيات', path: '/professor/analytics', icon: BarChart3 },
   ];
 
   const studentNav = [
-    { name: 'Dashboard', path: '/student/dashboard', icon: LayoutDashboard },
-    { name: 'Available Exams', path: '/student/exams', icon: BookOpen },
-    { name: 'My Results', path: '/student/results', icon: Award },
+    { name: 'الرئيسية', path: '/student/dashboard', icon: LayoutDashboard },
+    { name: 'الامتحانات المتاحة', path: '/student/exams', icon: BookOpen },
+    { name: 'نتائجي', path: '/student/results', icon: Award },
   ];
 
   const navItems = isProfessor ? professorNav : studentNav;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-cream flex flex-col md:flex-row">
       {/* Mobile Header Bar */}
-      <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-40">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-sm">
-            <GraduationCap className="w-5 h-5" />
-          </div>
-          <span className="font-bold text-gray-900 text-base">EduAssess</span>
+      <div className="md:hidden bg-cocoa-950 border-b border-white/10 px-4 py-3 flex items-center justify-between sticky top-0 z-40">
+        <div className="flex items-center gap-2.5">
+          <BrandMark size="sm" />
+          <span className="font-display text-gold-400 text-lg leading-none pt-1">IAS</span>
         </div>
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="p-2 rounded-lg text-gray-600 hover:bg-gray-100"
-          aria-label="Toggle menu"
+          className="p-2 rounded-lg text-cocoa-300 hover:bg-white/10"
+          aria-label="القائمة"
         >
           {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
@@ -67,50 +79,48 @@ const Layout = () => {
       {/* Sidebar Overlay on Mobile */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 md:hidden"
+          className="fixed inset-0 bg-cocoa-950/60 backdrop-blur-sm z-40 md:hidden"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
 
-      {/* Sidebar Navigation */}
+      {/* Sidebar Navigation — RTL: anchored to the right */}
       <aside
-        className={`fixed md:sticky top-0 left-0 bottom-0 z-40 w-64 bg-white border-r border-gray-200/80 flex flex-col justify-between transition-transform duration-200 ease-in-out md:translate-x-0 ${
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        className={`fixed md:sticky top-0 right-0 bottom-0 z-40 w-64 bg-cocoa-950 border-e border-white/10 flex flex-col justify-between transition-transform duration-200 ease-in-out md:translate-x-0 ${
+          mobileMenuOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'
         } h-screen`}
       >
         <div className="flex flex-col h-full">
           {/* Logo Brand Header */}
-          <div className="p-5 border-b border-gray-100 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-700 to-indigo-500 text-white flex items-center justify-center shadow-md shadow-indigo-100">
-              <GraduationCap className="w-6 h-6" />
-            </div>
+          <div className="p-5 border-b border-white/10 flex items-center gap-3">
+            <BrandMark />
             <div>
-              <h1 className="font-bold text-gray-900 text-base tracking-tight leading-snug">
-                IEAS Portal
+              <h1 className="font-display text-2xl text-gold-400 leading-none pt-1">
+                IA<span className="text-white">S</span>
               </h1>
-              <p className="text-[11px] font-medium text-indigo-600 uppercase tracking-wider">
-                Assessment System
+              <p className="text-[11px] font-semibold text-cocoa-300 mt-0.5">
+                منصة التقييم الذكية
               </p>
             </div>
           </div>
 
           {/* User Profile Card */}
-          <div className="p-4 mx-3 my-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm shrink-0">
+          <div className="p-4 mx-3 my-3 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl rounded-br-sm bg-teal-700 text-white flex items-center justify-center font-bold text-sm shrink-0">
               {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold text-gray-900 truncate">
-                {user?.name || 'User Account'}
+              <p className="text-xs font-bold text-white truncate">
+                {user?.name || 'حساب المستخدم'}
               </p>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span
                   className={`inline-block w-1.5 h-1.5 rounded-full ${
-                    isProfessor ? 'bg-indigo-500' : 'bg-emerald-500'
+                    isProfessor ? 'bg-gold-400' : 'bg-teal-500'
                   }`}
                 />
-                <span className="text-[11px] font-medium text-gray-500 capitalize">
-                  {user?.role || 'User'}
+                <span className="text-[11px] font-medium text-cocoa-300">
+                  {isProfessor ? 'أستاذ' : 'طالب'}
                 </span>
               </div>
             </div>
@@ -118,8 +128,8 @@ const Layout = () => {
 
           {/* Navigation Links */}
           <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-            <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-              {isProfessor ? 'Instructor Menu' : 'Student Menu'}
+            <div className="px-3 py-1.5 text-[11px] font-bold text-cocoa-500 tracking-wide">
+              {isProfessor ? 'مساحة الأستاذ' : 'بوابة الطالب'}
             </div>
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -129,10 +139,10 @@ const Layout = () => {
                   to={item.path}
                   onClick={() => setMobileMenuOpen(false)}
                   className={({ isActive }) =>
-                    `flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    `flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-bold transition-all ${
                       isActive
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-gray-600 hover:text-indigo-600 hover:bg-indigo-50/60'
+                        ? 'bg-gradient-to-l from-clay-700 to-clay-800 text-white shadow-pop'
+                        : 'text-cocoa-300 hover:text-gold-300 hover:bg-white/5'
                     }`
                   }
                 >
@@ -141,12 +151,12 @@ const Layout = () => {
                       <div className="flex items-center gap-3">
                         <Icon
                           className={`w-4 h-4 ${
-                            isActive ? 'text-white' : 'text-gray-400 group-hover:text-indigo-600'
+                            isActive ? 'text-gold-300' : 'text-cocoa-500'
                           }`}
                         />
                         <span>{item.name}</span>
                       </div>
-                      {isActive && <ChevronRight className="w-4 h-4 text-white/70" />}
+                      {isActive && <ChevronLeft className="w-4 h-4 text-gold-300/70" />}
                     </>
                   )}
                 </NavLink>
@@ -154,14 +164,14 @@ const Layout = () => {
             })}
           </nav>
 
-          {/* System Status / Logout at bottom */}
-          <div className="p-4 border-t border-gray-100">
+          {/* Logout at bottom */}
+          <div className="p-4 border-t border-white/10">
             <button
               onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium text-rose-600 hover:bg-rose-50 transition-colors"
+              className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-bold text-rose-300 hover:bg-rose-500/10 transition-colors"
             >
               <LogOut className="w-4 h-4" />
-              <span>Sign Out</span>
+              <span>تسجيل الخروج</span>
             </button>
           </div>
         </div>
@@ -170,27 +180,29 @@ const Layout = () => {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
         {/* Top Navbar */}
-        <header className="hidden md:flex h-16 bg-white border-b border-gray-200/80 px-8 items-center justify-between sticky top-0 z-30 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+        <header className="hidden md:flex h-16 bg-paper border-b border-sand px-8 items-center justify-between sticky top-0 z-30 shadow-[0_1px_3px_rgba(74,35,16,0.06)]">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              {isProfessor ? 'Professor Workspace' : 'Student Portal'}
+            <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-clay-100 text-clay-700 border border-clay-200 flex items-center gap-1.5">
+              <UserIcon className="w-3.5 h-3.5" />
+              {isProfessor ? 'مساحة الأستاذ' : 'بوابة الطالب'}
             </span>
-            <span className="text-gray-300">|</span>
-            <span className="text-xs text-gray-500 font-medium">
-              Intelligent Educational Assessment System
+            <span className="text-cocoa-300">|</span>
+            <span className="text-xs text-cocoa-500 font-semibold">
+              منصة التقييم التعليمي الذكية — بكالوريا البرمجة
             </span>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-xs font-semibold text-gray-900">{user?.name || 'User'}</p>
-              <p className="text-[11px] text-gray-500">{user?.email || ''}</p>
+          <div className="flex items-center gap-3">
+            <div className="text-left">
+              <p className="text-xs font-bold text-ink">{user?.name || 'مستخدم'}</p>
+              <p className="text-[11px] text-cocoa-500 font-code" dir="ltr">
+                {user?.email || ''}
+              </p>
             </div>
             <button
               onClick={handleLogout}
-              title="Sign Out"
-              className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+              title="تسجيل الخروج"
+              className="p-2 text-cocoa-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
             >
               <LogOut className="w-4 h-4" />
             </button>

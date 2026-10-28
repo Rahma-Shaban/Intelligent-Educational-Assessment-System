@@ -48,14 +48,33 @@ app.add_middleware(
 def on_startup() -> None:
     """Initialize SQLite database tables and ensure schema migrations."""
     Base.metadata.create_all(bind=engine)
+    migrations = [
+        ("exams", "is_published", "ALTER TABLE exams ADD COLUMN is_published BOOLEAN DEFAULT 0"),
+        (
+            "curriculums",
+            "professor_id",
+            "ALTER TABLE curriculums ADD COLUMN professor_id INTEGER REFERENCES users(id)",
+        ),
+        (
+            "curriculums",
+            "collection_name",
+            "ALTER TABLE curriculums ADD COLUMN collection_name VARCHAR(255)",
+        ),
+        (
+            "users",
+            "selected_professor_id",
+            "ALTER TABLE users ADD COLUMN selected_professor_id INTEGER REFERENCES users(id)",
+        ),
+    ]
     try:
         with engine.connect() as conn:
             inspector = inspect(engine)
-            if "exams" in inspector.get_table_names():
-                cols = [c["name"] for c in inspector.get_columns("exams")]
-                if "is_published" not in cols:
-                    conn.execute(text("ALTER TABLE exams ADD COLUMN is_published BOOLEAN DEFAULT 0"))
-                    conn.commit()
+            for table, column, ddl in migrations:
+                if table in inspector.get_table_names():
+                    cols = [c["name"] for c in inspector.get_columns(table)]
+                    if column not in cols:
+                        conn.execute(text(ddl))
+                        conn.commit()
     except Exception:
         pass
 

@@ -44,6 +44,12 @@ class User(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    # Professor a student is enrolled with (students only; persisted selection)
+    selected_professor_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
 
 class Curriculum(Base):
@@ -55,6 +61,15 @@ class Curriculum(Base):
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     lessons_json: Mapped[str] = mapped_column(Text, nullable=False)
     vector_store_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Professor who uploaded this document (NULL for legacy pre-scoping rows)
+    professor_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # Chroma collection used for retrieval; NULL means legacy shared "curriculum"
+    collection_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

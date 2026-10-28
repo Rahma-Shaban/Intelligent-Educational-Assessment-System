@@ -40,26 +40,26 @@ const Modal = ({
       {/* Dialog container */}
       <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
         <div
-          className={`relative transform overflow-hidden rounded-2xl bg-white text-left shadow-2xl transition-all sm:my-8 w-full ${maxWidth} border border-gray-100`}
+          className={`relative transform overflow-hidden rounded-2xl bg-paper text-right shadow-2xl transition-all sm:my-8 w-full ${maxWidth} border border-cocoa-300/40`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
           {(title || subtitle) && (
-            <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-gray-100">
+            <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-sand">
               <div>
                 {title && (
-                  <h3 className="text-lg font-semibold text-gray-900 leading-6">
+                  <h3 className="text-lg font-bold text-ink leading-6">
                     {title}
                   </h3>
                 )}
                 {subtitle && (
-                  <p className="mt-1 text-xs text-gray-500">{subtitle}</p>
+                  <p className="mt-1 text-xs text-cocoa-500">{subtitle}</p>
                 )}
               </div>
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg p-1 text-gray-400 hover:text-gray-500 hover:bg-gray-100 transition-colors"
+                className="rounded-lg p-1 text-cocoa-300 hover:text-ink hover:bg-sand transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -71,7 +71,7 @@ const Modal = ({
 
           {/* Footer */}
           {footer && (
-            <div className="bg-gray-50 px-6 py-4 flex flex-row-reverse gap-3 border-t border-gray-100">
+            <div className="bg-cream px-6 py-4 flex flex-row-reverse gap-3 border-t border-sand">
               {footer}
             </div>
           )}

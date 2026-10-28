@@ -60,7 +60,7 @@ const Analytics = () => {
     setClusterSuccess('');
     try {
       const clusterResult = await runClustering();
-      setClusterSuccess('Unsupervised clustering model updated successfully!');
+      setClusterSuccess('نموذج التجميع الذكي اتحدّث بنجاح! 🎉');
       // Refresh analytics data
       if (clusterResult && (clusterResult.clusters || clusterResult.students)) {
         setData((prev) => ({
@@ -75,7 +75,7 @@ const Analytics = () => {
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.message ||
-        'Failed to run ML clustering. Ensure student assessment attempts exist in the database.';
+        'فشل تشغيل التجميع الذكي. تأكد إن فيه محاولات امتحانات مسجّلة في قاعدة البيانات.';
       setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
     } finally {
       setClusteringRunning(false);
@@ -83,7 +83,7 @@ const Analytics = () => {
   };
 
   if (loading) {
-    return <LoadingSpinner size="lg" message="Computing cohort analytics..." />;
+    return <LoadingSpinner size="lg" message="جاري حساب تحليلات الفصل..." />;
   }
 
   const clusterItems = Array.isArray(data?.clusters) ? data.clusters : [];
@@ -158,12 +158,11 @@ const Analytics = () => {
     <div className="space-y-8">
       {/* Title & Trigger Button */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">
-            Cohort Analytics & Clustering
-          </h1>
-          <p className="text-sm text-gray-600 mt-1">
-            Unsupervised machine learning profiles students into proficiency clusters to identify knowledge gaps and at-risk students.
+        <div className="relative">
+          <span className="code-chip absolute -top-3 end-0 rotate-2 hidden md:inline-block">clusters = kmeans(students)</span>
+          <h1 className="font-display text-3xl md:text-4xl text-ink">الإحصائيات والتحليلات 📊</h1>
+          <p className="text-sm text-cocoa-500 mt-1 leading-relaxed">
+            التعلم الآلي بيصنّف الطلبة لمجموعات مستويات عشان تكتشف مواضيع الضعف والطلبة المحتاجين مساعدة.
           </p>
         </div>
         <Button
@@ -172,8 +171,9 @@ const Analytics = () => {
           loading={clusteringRunning}
           onClick={handleRunClustering}
           icon={Network}
+          className="btn-cut shrink-0"
         >
-          {clusteringRunning ? 'Clustering Cohort...' : 'Run ML Clustering'}
+          {clusteringRunning ? 'جاري التجميع...' : 'شغّل التجميع الذكي'}
         </Button>
       </div>
 
@@ -184,77 +184,77 @@ const Analytics = () => {
 
       {/* Cluster Distribution Overview */}
       <Card
-        title="Student Proficiency Distribution"
-        subtitle="Current breakdown across learning clusters"
+        title="توزيع مستوى الطلبة"
+        subtitle="التقسيم الحالي لمجموعات التعلم"
       >
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="p-4 rounded-xl border border-purple-200 bg-purple-50/40">
+          <div className="p-4 rounded-2xl border-2 border-clay-200 bg-clay-50/50 !border-t-4 !border-t-clay-600">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-purple-700">
-                Advanced
+              <span className="text-xs font-bold text-clay-700">
+                متقدمين (Advanced)
               </span>
-              <Badge variant="primary" size="sm">
+              <span className="sticker !text-[10px] !py-0.5 text-clay-700" style={{ borderWidth: 1.5 }}>
                 {advancedPct}%
-              </Badge>
+              </span>
             </div>
-            <p className="text-2xl font-extrabold text-purple-900 mt-2">
+            <p className="font-display text-3xl text-clay-700 mt-2">
               {clusters.advanced || 0}
             </p>
-            <p className="text-xs text-purple-600 mt-1">
-              High conceptual mastery, consistent answers
+            <p className="text-xs text-cocoa-500 mt-1 font-semibold">
+              فهم عميق وإجابات متسقة
             </p>
           </div>
 
-          <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/40">
+          <div className="p-4 rounded-2xl border-2 border-teal-200 bg-teal-50/50 !border-t-4 !border-t-teal-700">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-blue-700">
-                Proficient
+              <span className="text-xs font-bold text-teal-700">
+                متمكنين (Proficient)
               </span>
-              <Badge variant="info" size="sm">
+              <span className="sticker !text-[10px] !py-0.5 text-teal-700" style={{ borderWidth: 1.5 }}>
                 {proficientPct}%
-              </Badge>
+              </span>
             </div>
-            <p className="text-2xl font-extrabold text-blue-900 mt-2">
+            <p className="font-display text-3xl text-teal-700 mt-2">
               {clusters.proficient || 0}
             </p>
-            <p className="text-xs text-blue-600 mt-1">
-              Solid understanding, minor rubric gaps
+            <p className="text-xs text-cocoa-500 mt-1 font-semibold">
+              فهم قوي مع فجوات بسيطة
             </p>
           </div>
 
-          <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/40">
+          <div className="p-4 rounded-2xl border-2 border-rose-200 bg-rose-50/50 !border-t-4 !border-t-rose-500">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-rose-700">
-                Needs Intervention
+              <span className="text-xs font-bold text-rose-700">
+                محتاجين متابعة (Intervention)
               </span>
-              <Badge variant="danger" size="sm">
+              <span className="sticker !text-[10px] !py-0.5 text-rose-600" style={{ borderWidth: 1.5 }}>
                 {interventionPct}%
-              </Badge>
+              </span>
             </div>
-            <p className="text-2xl font-extrabold text-rose-900 mt-2">
+            <p className="font-display text-3xl text-rose-600 mt-2">
               {clusters.needs_intervention || clusters.at_risk || 0}
             </p>
-            <p className="text-xs text-rose-600 mt-1">
-              Frequent misconceptions & missing citations
+            <p className="text-xs text-cocoa-500 mt-1 font-semibold">
+              أخطاء متكررة وفجوات في الفهم
             </p>
           </div>
         </div>
 
         {/* Visual Stacked Progress Bar */}
         <div className="space-y-1.5">
-          <div className="flex justify-between text-xs text-gray-500 font-medium">
-            <span>Cohort Distribution Spectrum</span>
-            <span>{totalClusterStudents} Evaluated Students</span>
+          <div className="flex justify-between text-xs text-cocoa-500 font-bold">
+            <span>طيف توزيع الفصل</span>
+            <span>{totalClusterStudents} طالب مُقيَّم</span>
           </div>
-          <div className="w-full h-3.5 bg-gray-100 rounded-full flex overflow-hidden shadow-inner">
+          <div className="w-full h-3.5 bg-sand rounded-full flex overflow-hidden shadow-inner">
             <div
               style={{ width: `${advancedPct}%` }}
-              className="bg-purple-600 h-full transition-all duration-500"
+              className="bg-gradient-to-l from-clay-600 to-clay-500 h-full transition-all duration-500"
               title={`Advanced: ${advancedPct}%`}
             />
             <div
               style={{ width: `${proficientPct}%` }}
-              className="bg-blue-500 h-full transition-all duration-500"
+              className="bg-teal-500 h-full transition-all duration-500"
               title={`Proficient: ${proficientPct}%`}
             />
             <div
@@ -263,18 +263,18 @@ const Analytics = () => {
               title={`Needs Intervention: ${interventionPct}%`}
             />
           </div>
-          <div className="flex items-center gap-6 text-[11px] text-gray-500 pt-1">
+          <div className="flex items-center gap-6 text-[11px] text-cocoa-500 pt-1 font-bold">
             <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-purple-600 inline-block" />
-              <span>Advanced ({advancedPct}%)</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-clay-600 inline-block" />
+              <span>متقدمين ({advancedPct}%)</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" />
-              <span>Proficient ({proficientPct}%)</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-teal-500 inline-block" />
+              <span>متمكنين ({proficientPct}%)</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" />
-              <span>Needs Intervention ({interventionPct}%)</span>
+              <span>محتاجين متابعة ({interventionPct}%)</span>
             </div>
           </div>
         </div>
@@ -282,23 +282,27 @@ const Analytics = () => {
 
       {/* Topic Mastery Bars & Class Averages */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card title="Topic Performance Breakdown" subtitle="Class-wide average score per curriculum area">
+        <Card title="أداء المواضيع" subtitle="متوسط درجات الفصل لكل مجال في المنهج">
           <div className="space-y-4 mt-2">
             {(topicPerformance || []).length === 0 ? (
-              <p className="text-xs text-gray-500 py-4 text-center">No topic performance data available yet.</p>
+              <p className="text-xs text-cocoa-500 py-4 text-center">لسه مفيش بيانات أداء للمواضيع.</p>
             ) : (
               (topicPerformance || []).map((tp, idx) => {
                 const score = tp.score || tp.average || 0;
                 const barColor =
-                  score >= 80 ? 'bg-emerald-500' : score >= 70 ? 'bg-indigo-500' : 'bg-amber-500';
+                  score >= 80
+                    ? 'bg-teal-600'
+                    : score >= 70
+                    ? 'bg-gradient-to-l from-clay-600 to-clay-500'
+                    : 'bg-gold-500';
 
                 return (
                   <div key={idx} className="space-y-1">
-                    <div className="flex justify-between text-xs font-semibold">
-                      <span className="text-gray-800">{tp.topic}</span>
-                      <span className="text-gray-900 font-bold">{Math.round(score)}%</span>
+                    <div className="flex justify-between text-xs font-bold">
+                      <span className="text-cocoa-800" dir="auto">{tp.topic}</span>
+                      <span className="text-ink font-extrabold">{Math.round(score)}%</span>
                     </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                    <div className="w-full bg-sand rounded-full h-2 overflow-hidden">
                       <div
                         className={`h-2 rounded-full ${barColor} transition-all duration-500`}
                         style={{ width: `${score}%` }}
@@ -311,38 +315,38 @@ const Analytics = () => {
           </div>
         </Card>
 
-        <Card title="Class Proficiency Metrics" subtitle="Overview of student assessment engagements">
+        <Card title="مؤشرات الفصل" subtitle="نظرة عامة على تفاعل الطلبة">
           <div className="grid grid-cols-2 gap-4 mt-2">
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-              <p className="text-xs text-gray-500 uppercase font-semibold">Average Class Score</p>
-              <h4 className="text-2xl font-bold text-gray-900 mt-1">
+            <div className="p-4 bg-cream rounded-2xl border border-sand">
+              <p className="text-xs text-cocoa-500 font-bold">متوسط درجات الفصل</p>
+              <h4 className="font-display text-2xl text-clay-700 mt-1">
                 {avgScore ? `${Math.round(avgScore)}%` : '0%'}
               </h4>
-              <p className="text-[11px] text-emerald-600 font-medium mt-1">Passing Benchmark: 60%</p>
+              <p className="text-[11px] text-teal-700 font-bold mt-1">حد النجاح: ٦٠٪</p>
             </div>
 
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-              <p className="text-xs text-gray-500 uppercase font-semibold">Total Assessments Taken</p>
-              <h4 className="text-2xl font-bold text-gray-900 mt-1">
+            <div className="p-4 bg-cream rounded-2xl border border-sand">
+              <p className="text-xs text-cocoa-500 font-bold">إجمالي المحاولات</p>
+              <h4 className="font-display text-2xl text-teal-700 mt-1">
                 {totalAttempts}
               </h4>
-              <p className="text-[11px] text-indigo-600 font-medium mt-1">Automated semantic evaluations</p>
+              <p className="text-[11px] text-cocoa-500 font-semibold mt-1">تقييمات آلية</p>
             </div>
 
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-              <p className="text-xs text-gray-500 uppercase font-semibold">At-Risk Alerts</p>
-              <h4 className="text-2xl font-bold text-rose-600 mt-1">
+            <div className="p-4 bg-cream rounded-2xl border border-sand">
+              <p className="text-xs text-cocoa-500 font-bold">تنبيهات الطلبة</p>
+              <h4 className="font-display text-2xl text-rose-600 mt-1">
                 {clusters.needs_intervention || 0}
               </h4>
-              <p className="text-[11px] text-rose-500 font-medium mt-1">Target for targeted review</p>
+              <p className="text-[11px] text-rose-500 font-bold mt-1">محتاجين مراجعة</p>
             </div>
 
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-              <p className="text-xs text-gray-500 uppercase font-semibold">Active Cohort Size</p>
-              <h4 className="text-2xl font-bold text-gray-900 mt-1">
+            <div className="p-4 bg-cream rounded-2xl border border-sand">
+              <p className="text-xs text-cocoa-500 font-bold">عدد الطلبة</p>
+              <h4 className="font-display text-2xl text-cocoa-800 mt-1">
                 {totalStudents}
               </h4>
-              <p className="text-[11px] text-gray-500 font-medium mt-1">Enrolled students</p>
+              <p className="text-[11px] text-cocoa-500 font-semibold mt-1">مسجلين في الفصل</p>
             </div>
           </div>
         </Card>
@@ -350,63 +354,68 @@ const Analytics = () => {
 
       {/* Student List Grouped by Cluster */}
       <Card
-        title="Student Roster by Cluster"
-        subtitle="Individual student profiles and learning pattern assignments"
+        title="قائمة الطلبة حسب المجموعة"
+        subtitle="ملفات الطلبة وتصنيف أنماط تعلمهم"
         action={
-          <div className="flex gap-1.5 bg-gray-100 p-1 rounded-lg text-xs">
-            {['all', 'advanced', 'proficient', 'needs_intervention'].map((tab) => (
+          <div className="flex gap-1.5 bg-sand p-1 rounded-xl text-xs">
+            {[
+              { key: 'all', label: 'الكل' },
+              { key: 'advanced', label: 'متقدمين' },
+              { key: 'proficient', label: 'متمكنين' },
+              { key: 'needs_intervention', label: 'محتاجين متابعة' },
+            ].map((tab) => (
               <button
-                key={tab}
+                key={tab.key}
                 type="button"
-                onClick={() => setActiveClusterTab(tab)}
-                className={`px-3 py-1 rounded-md font-medium capitalize transition-all ${
-                  activeClusterTab === tab
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                onClick={() => setActiveClusterTab(tab.key)}
+                className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                  activeClusterTab === tab.key
+                    ? 'bg-paper text-ink shadow-sm'
+                    : 'text-cocoa-500 hover:text-ink'
                 }`}
               >
-                {tab.replace('_', ' ')}
+                {tab.label}
               </button>
             ))}
           </div>
         }
       >
         {filteredStudents.length === 0 ? (
-          <div className="text-center py-8 text-gray-500 text-xs">
-            No students found in the selected category.
+          <div className="text-center py-8 text-cocoa-500 text-xs">
+            مفيش طلبة في التصنيف المختار.
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left divide-y divide-gray-200">
-              <thead className="bg-gray-50 text-gray-500 uppercase font-semibold text-[10px]">
+            <table className="w-full text-xs text-right divide-y divide-sand">
+              <thead className="bg-cream text-cocoa-500 font-bold text-[11px]">
                 <tr>
-                  <th className="px-4 py-3">Student Name</th>
-                  <th className="px-4 py-3">Email</th>
-                  <th className="px-4 py-3">Cluster Profile</th>
-                  <th className="px-4 py-3 text-center">Attempts</th>
-                  <th className="px-4 py-3 text-right">Average Score</th>
+                  <th className="px-4 py-3">اسم الطالب</th>
+                  <th className="px-4 py-3">البريد الإلكتروني</th>
+                  <th className="px-4 py-3">التصنيف</th>
+                  <th className="px-4 py-3 text-center">المحاولات</th>
+                  <th className="px-4 py-3">المتوسط</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
+              <tbody className="divide-y divide-sand bg-paper">
                 {filteredStudents.map((student, idx) => {
                   const sCluster = student.cluster || student.group || 'proficient';
                   return (
-                    <tr key={student.id || idx} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 font-semibold text-gray-900 flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-[10px]">
+                    <tr key={student.id || idx} className="hover:bg-cream/60 transition-colors">
+                      <td className="px-4 py-3 font-bold text-ink flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg rounded-br-sm bg-clay-100 text-clay-700 font-bold flex items-center justify-center text-[11px]">
                           {student.name ? student.name.charAt(0).toUpperCase() : 'S'}
                         </div>
                         <span>{student.name}</span>
                       </td>
-                      <td className="px-4 py-3 text-gray-500">{student.email}</td>
+                      <td className="px-4 py-3 text-cocoa-500 font-code text-[11px]" dir="ltr">{student.email}</td>
                       <td className="px-4 py-3">
                         <Badge type="cluster">{sCluster}</Badge>
                       </td>
-                      <td className="px-4 py-3 text-center text-gray-600 font-medium">
+                      <td className="px-4 py-3 text-center text-cocoa-500 font-bold">
                         {student.attempts || student.num_attempts || 1}
                       </td>
-                      <td className="px-4 py-3 text-right font-bold text-gray-900">
-                        {student.score !== undefined ? `${Math.round(student.score)}%` : 'N/A'}
+                      <td className="px-4 py-3 font-extrabold text-ink">
+                        {student.score !== undefined ? `${Math.round(student.score)}%` : '—'}
                       </td>
                     </tr>
                   );

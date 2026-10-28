@@ -43,6 +43,23 @@ class UserResponse(BaseModel):
     email: str
     role: str
     created_at: datetime
+    selected_professor_id: int | None = None
+
+
+class ProfessorOption(BaseModel):
+    """Compact professor entry for student selection lists."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    email: str
+
+
+class SelectProfessorRequest(BaseModel):
+    """Payload for a student to persist their chosen professor."""
+
+    professor_id: int = Field(..., gt=0, description="ID of the professor to enroll with")
 
 
 class TokenResponse(BaseModel):
@@ -79,6 +96,22 @@ class CurriculumResponse(BaseModel):
     filename: str
     lessons: list[LessonItem]
     uploaded_at: datetime
+    professor_id: int | None = None
+    collection_name: str | None = None
+    lesson_count: int = 0
+
+
+class CurriculumSummary(BaseModel):
+    """Document library entry for a professor's uploaded curriculum."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filename: str
+    uploaded_at: datetime
+    professor_id: int | None = None
+    lesson_count: int = 0
+    lessons: list[LessonItem] = Field(default_factory=list)
 
 
 # ==============================================================================
@@ -89,6 +122,11 @@ class CurriculumResponse(BaseModel):
 class ExamGenerateRequest(BaseModel):
     """Parameters for AI exam generation."""
 
+    curriculum_id: int = Field(
+        ...,
+        gt=0,
+        description="Textbook/document ID whose lessons are eligible for generation",
+    )
     lesson_id: str = Field(..., min_length=1, description="Curriculum lesson ID, e.g. '1-1'")
     topic: str = Field(default="", description="Assessment topic title")
     difficulty: str = Field(default="medium", pattern="^(easy|medium|hard)$")
@@ -119,6 +157,7 @@ class ExamListItem(BaseModel):
     question_count: int
     is_published: bool = False
     created_at: datetime
+    curriculum_id: int | None = None
 
 
 class ExamResponse(BaseModel):
@@ -136,6 +175,7 @@ class ExamResponse(BaseModel):
     question_count: int
     is_published: bool = False
     created_at: datetime
+    curriculum_id: int | None = None
     questions: list[dict[str, Any]] | None = None
     warnings: list[str] = Field(default_factory=list)
 
@@ -143,6 +183,33 @@ class ExamResponse(BaseModel):
 class ExamPublishRequest(BaseModel):
     """Parameters for publishing or unpublishing an assessment."""
     is_published: bool = True
+
+
+class RubricItemUpdate(BaseModel):
+    """Single grading criterion inside an edited question."""
+
+    criterion: str = Field(..., min_length=1)
+    description: str = Field(..., min_length=1)
+    points: float = Field(..., gt=0)
+
+
+class QuestionUpdateRequest(BaseModel):
+    """Professor-provided edits for one generated exam question."""
+
+    question: str = Field(..., min_length=1, description="Question prompt text")
+    question_type: str = Field(..., pattern="^(mcq|short_answer|essay)$")
+    difficulty: str = Field(..., pattern="^(easy|medium|hard)$")
+    bloom_level: str = Field(
+        ...,
+        pattern="^(remember|understand|apply|analyze|evaluate|create)$",
+    )
+    options: list[str] = Field(default_factory=list, description="MCQ options (exactly 4 for MCQ)")
+    correct_answer: str = Field(default="", description="MCQ correct letter (A-D)")
+    reference_answer: str = Field(..., min_length=1, description="Model answer used by grading")
+    explanation: str = Field(..., min_length=1, description="Teaching explanation of the answer")
+    max_score: float = Field(..., gt=0, description="Must equal the sum of rubric points")
+    rubric: list[RubricItemUpdate] = Field(..., min_length=1)
+    bloom_rationale: str | None = Field(default=None, description="Optional Bloom classification rationale")
 
 
 # ==============================================================================

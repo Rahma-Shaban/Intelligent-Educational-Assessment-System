@@ -58,6 +58,18 @@ export const getMe = async () => {
   return response.data;
 };
 
+export const getProfessors = async () => {
+  const response = await apiClient.get('/auth/professors');
+  return response.data;
+};
+
+export const selectProfessor = async (professorId) => {
+  const response = await apiClient.put('/auth/select-professor', {
+    professor_id: professorId,
+  });
+  return response.data;
+};
+
 // Curriculum endpoints
 export const uploadCurriculum = async (file) => {
   const formData = new FormData();
@@ -67,6 +79,16 @@ export const uploadCurriculum = async (file) => {
       'Content-Type': 'multipart/form-data',
     },
   });
+  return response.data;
+};
+
+export const getDocuments = async () => {
+  const response = await apiClient.get('/curriculum');
+  return response.data;
+};
+
+export const getDocumentLessons = async (curriculumId) => {
+  const response = await apiClient.get(`/curriculum/${curriculumId}/lessons`);
   return response.data;
 };
 
@@ -93,6 +115,14 @@ export const getExam = async (id) => {
 
 export const togglePublishExam = async (id, isPublished = true) => {
   const response = await apiClient.patch(`/exams/${id}/publish`, { is_published: isPublished });
+  return response.data;
+};
+
+export const updateExamQuestion = async (examId, questionIndex, payload) => {
+  const response = await apiClient.patch(
+    `/exams/${examId}/questions/${questionIndex}`,
+    payload
+  );
   return response.data;
 };
 

@@ -3,7 +3,8 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Button from '../components/ui/Button';
 import Alert from '../components/ui/Alert';
-import { GraduationCap, Mail, Lock, LogIn } from 'lucide-react';
+import { Mail, Lock, LogIn } from 'lucide-react';
+import { BrandMark } from '../components/Layout';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -31,7 +32,7 @@ const LoginPage = () => {
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.message ||
-        'Invalid email or password. Please try again.';
+        'البريد الإلكتروني أو كلمة المرور غير صحيحة، حاول تاني.';
       setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
     } finally {
       setLoading(false);
@@ -39,42 +40,76 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-slate-50 to-blue-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center">
-          <div className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-200">
-            <GraduationCap className="w-8 h-8" />
+    <div className="min-h-screen bg-cream flex flex-col lg:flex-row">
+      {/* Branded art panel — programming vibe */}
+      <div className="relative lg:w-[46%] bg-gradient-to-bl from-clay-600 via-clay-800 to-clay-950 text-white px-8 py-10 lg:px-12 lg:py-12 flex flex-col overflow-hidden">
+        <div className="absolute -top-20 -start-20 w-64 h-64 rounded-full bg-gold-400/20 blur-3xl" />
+        <div className="absolute bottom-10 end-0 w-52 h-52 rounded-full bg-gold-500/10 blur-2xl" />
+
+        {/* floating code chips */}
+        <span className="code-chip-light absolute top-24 end-8 rotate-3 hidden md:inline-block">print("Hello, IAS")</span>
+        <span className="code-chip-light absolute top-40 end-28 -rotate-2 hidden md:inline-block">for attempt in exams:</span>
+
+        <div className="flex items-center gap-3 relative z-10">
+          <BrandMark size="lg" />
+          <div>
+            <h2 className="font-display text-3xl leading-none pt-1">
+              IA<span className="text-gold-300">S</span>
+            </h2>
+            <p className="text-[12px] font-semibold text-clay-100 mt-1">منصة التقييم التعليمي الذكية</p>
           </div>
         </div>
-        <h2 className="mt-4 text-center text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
-          Welcome to IEAS
-        </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
-          Intelligent Educational Assessment & Semantic Evaluation
-        </p>
+
+        <div className="relative z-10 mt-10 lg:mt-auto mb-8">
+          <span className="sticker border-white/60 bg-white/10 text-gold-200 -rotate-1">
+            🎓 منهج Programming & Computer Science — بكالوريا
+          </span>
+          <h1 className="font-display text-4xl lg:text-[2.6rem] leading-snug mt-5">
+            امتحانك يتولّد بالذكاء
+            <br />
+            <span className="text-gold-300">وتصحيحه ييجي فوراً ⚡</span>
+          </h1>
+          <p className="text-clay-100 text-sm leading-relaxed mt-4 max-w-md">
+            ارفع ملف المقرر بالإنجليزي، والمنصة تولّد أسئلة منه من محتواه، تصحّحها آلياً،
+            وتحلّل مستوى كل طالب.
+          </p>
+
+          {/* terminal window */}
+          <div className="term mt-7 max-w-sm">
+            <div className="term-bar">
+              <span className="term-dot bg-rose-400" />
+              <span className="term-dot bg-gold-400" />
+              <span className="term-dot bg-teal-400" />
+            </div>
+            <div className="term-body text-gold-200">
+              <p><span className="text-teal-300">$</span> ias generate --curriculum <span className="text-white">CS-Bac2.pdf</span></p>
+              <p className="text-cocoa-300"># retrieving context ... ✓</p>
+              <p><span className="text-teal-300">$</span> grading <span className="text-gold-300">--instant</span> <span className="text-cocoa-300"># ⚡</span></p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4">
-        <div className="bg-white py-8 px-6 sm:px-10 shadow-xl shadow-slate-200/60 rounded-2xl border border-gray-100">
+      {/* Form panel */}
+      <div className="flex-1 flex flex-col justify-center px-6 py-12 sm:px-12 lg:px-20">
+        <div className="w-full max-w-md mx-auto">
+          <h2 className="font-display text-3xl text-ink">أهلاً بيك تاني 👋</h2>
+          <p className="text-sm text-cocoa-500 mt-1 mb-7">سجّل دخولك وكمّل من حيث وقفت</p>
+
           {error && (
-            <Alert
-              type="error"
-              className="mb-6"
-              onClose={() => setError('')}
-              message={error}
-            />
+            <Alert type="error" className="mb-5" onClose={() => setError('')} message={error} />
           )}
 
           <form className="space-y-5" onSubmit={handleSubmit}>
             <div>
               <label
                 htmlFor="email"
-                className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5"
+                className="block text-[13px] font-bold text-cocoa-800 mb-1.5"
               >
-                Institutional Email
+                البريد الإلكتروني
               </label>
-              <div className="relative rounded-lg shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+              <div className="relative rounded-2xl shadow-sm">
+                <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none text-cocoa-300">
                   <Mail className="w-4 h-4" />
                 </div>
                 <input
@@ -85,23 +120,21 @@ const LoginPage = () => {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="user@university.edu"
-                  className="block w-full pl-10 pr-3 py-2.5 sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-colors"
+                  placeholder="user@school.edu.eg"
+                  className="block w-full ps-11 pe-4 py-3 text-sm bg-white border-2 border-cocoa-300/60 rounded-2xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 transition outline-none"
                 />
               </div>
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label
-                  htmlFor="password"
-                  className="block text-xs font-semibold text-gray-700 uppercase tracking-wider"
-                >
-                  Password
-                </label>
-              </div>
-              <div className="relative rounded-lg shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+              <label
+                htmlFor="password"
+                className="block text-[13px] font-bold text-cocoa-800 mb-1.5"
+              >
+                كلمة المرور
+              </label>
+              <div className="relative rounded-2xl shadow-sm">
+                <div className="absolute inset-y-0 start-0 ps-4 flex items-center pointer-events-none text-cocoa-300">
                   <Lock className="w-4 h-4" />
                 </div>
                 <input
@@ -113,7 +146,7 @@ const LoginPage = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="block w-full pl-10 pr-3 py-2.5 sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-colors"
+                  className="block w-full ps-11 pe-4 py-3 text-sm bg-white border-2 border-cocoa-300/60 rounded-2xl focus:ring-4 focus:ring-gold-400/20 focus:border-gold-500 transition outline-none"
                 />
               </div>
             </div>
@@ -123,34 +156,19 @@ const LoginPage = () => {
               variant="primary"
               size="lg"
               loading={loading}
-              className="w-full mt-2"
+              className="w-full mt-2 btn-cut"
               icon={LogIn}
             >
-              Sign In
+              يلا نبدأ
             </Button>
           </form>
 
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-3 text-gray-500 font-medium">
-                  New to IEAS?
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-6 text-center">
-              <Link
-                to="/register"
-                className="font-medium text-sm text-indigo-600 hover:text-indigo-500 hover:underline"
-              >
-                Create an instructor or student account &rarr;
-              </Link>
-            </div>
-          </div>
+          <p className="mt-7 text-[13.5px] text-cocoa-500 text-center">
+            لسه معندكش حساب؟{' '}
+            <Link to="/register" className="font-bold text-clay-700 hover:text-clay-600 hover:underline">
+              سجّل في المنصة
+            </Link>
+          </p>
         </div>
       </div>
     </div>

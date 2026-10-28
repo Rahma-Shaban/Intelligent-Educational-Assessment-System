@@ -15,10 +15,10 @@ const LoadingSpinner = ({
   };
 
   const content = (
-    <div className={`flex flex-col items-center justify-center p-8 gap-3 text-gray-500 ${className}`}>
-      <Loader2 className={`${sizeMap[size] || sizeMap.md} animate-spin text-indigo-600`} />
+    <div className={`flex flex-col items-center justify-center p-8 gap-3 text-cocoa-500 ${className}`}>
+      <Loader2 className={`${sizeMap[size] || sizeMap.md} animate-spin text-clay-600`} />
       {message && (
-        <p className="text-sm font-medium text-gray-600 animate-pulse">
+        <p className="text-sm font-bold text-cocoa-500 animate-pulse">
           {message}
         </p>
       )}

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getProfessorDashboard, getExams } from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -13,14 +14,16 @@ import {
   Users,
   Award,
   TrendingUp,
-  ArrowRight,
+  ArrowLeft,
   Clock,
   CheckCircle,
   AlertCircle,
   HelpCircle,
+  Code2,
 } from 'lucide-react';
 
 const ProfessorDashboard = () => {
+  const { user } = useAuth();
   const [dashboardData, setDashboardData] = useState(null);
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -49,7 +52,7 @@ const ProfessorDashboard = () => {
         }
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
-        setError('Could not load some dashboard analytics. Using available data.');
+        setError(' قدرنا نجيب جزء من بيانات اللوحة فقط. يتم استخدام المتاح حالياً.');
       } finally {
         setLoading(false);
       }
@@ -59,7 +62,7 @@ const ProfessorDashboard = () => {
   }, []);
 
   if (loading) {
-    return <LoadingSpinner size="lg" message="Loading instructor dashboard..." />;
+    return <LoadingSpinner size="lg" message="جاري تحميل المنصة ..." />;
   }
 
   // Derive stats either from dashboard endpoint or exam collection
@@ -97,27 +100,29 @@ const ProfessorDashboard = () => {
   return (
     <div className="space-y-8">
       {/* Welcome Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-gradient-to-r from-indigo-700 via-indigo-600 to-blue-600 rounded-2xl p-6 md:p-8 text-white shadow-lg shadow-indigo-100">
-        <div>
-          <span className="text-xs uppercase tracking-wider font-semibold text-indigo-200">
-            Instructor Control Center
-          </span>
-          <h1 className="text-2xl md:text-3xl font-extrabold mt-1">
-            Welcome back, Professor
+      <div className="relative overflow-hidden flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-gradient-to-bl from-clay-700 via-clay-800 to-clay-950 rounded-3xl p-6 md:p-8 text-white shadow-pop">
+        <span className="code-chip-light absolute top-5 end-6 rotate-2 hidden md:inline-block">generate_exam(lesson=...)</span>
+        <div className="absolute -bottom-16 -start-10 w-56 h-56 rounded-full bg-gold-400/10 blur-2xl" />
+        <div className="relative z-10">
+          <h1 className="font-display text-3xl md:text-4xl leading-snug">
+            أهلاً أ. <span className="text-gold-300">{user?.name || 'أستاذ'}</span>
           </h1>
-          <p className="text-indigo-100 text-sm mt-1 max-w-xl">
-            Generate curriculum-grounded exams, monitor student cohort clustering, and view semantic assessment analytics.
+          <p className="text-clay-100 text-sm mt-2 max-w-xl leading-relaxed">
+            ولّد امتحانات وتابع مستوى الطلبة.
           </p>
+          <span className="sticker border-gold-400/60 bg-white/10 text-gold-200 mt-4 inline-flex">
+            📘 Programming & Computer Science — تانية بكالوريا
+          </span>
         </div>
-        <div className="flex flex-wrap gap-2.5">
+        <div className="relative z-10 flex flex-wrap gap-2.5">
           <Link to="/professor/curriculum">
             <Button variant="secondary" size="md" icon={FileUp} className="bg-white/10 hover:bg-white/20 text-white border-white/20">
-              Upload Curriculum
+              رفع منهج
             </Button>
           </Link>
           <Link to="/professor/generate">
-            <Button variant="secondary" size="md" icon={Sparkles} className="bg-white text-indigo-900 hover:bg-indigo-50 border-none font-semibold">
-              Generate Exam
+            <Button variant="secondary" size="md" icon={Sparkles} className="bg-gold-400 text-clay-950 hover:bg-gold-300 border-none font-bold">
+              إنشاء امتحان ✨
             </Button>
           </Link>
         </div>
@@ -127,61 +132,49 @@ const ProfessorDashboard = () => {
 
       {/* Overview Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <Card className="hover:border-indigo-200">
+        <Card className="hover:border-clay-200 !border-t-4 !border-t-clay-600">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total Exams
-              </p>
-              <h3 className="text-3xl font-bold text-gray-900 mt-1">{totalExams}</h3>
-              <p className="text-xs text-indigo-600 font-medium mt-1">Active assessments</p>
+              <p className="text-xs font-bold text-cocoa-500">إجمالي الامتحانات</p>
+              <h3 className="font-display text-3xl text-clay-700 mt-1">{totalExams}</h3>
             </div>
-            <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
+            <div className="w-12 h-12 bg-clay-100 text-clay-700 rounded-2xl rounded-br-sm flex items-center justify-center">
               <BookOpen className="w-6 h-6" />
             </div>
           </div>
         </Card>
 
-        <Card className="hover:border-blue-200">
+        <Card className="hover:border-teal-200 !border-t-4 !border-t-teal-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Enrolled Students
-              </p>
-              <h3 className="text-3xl font-bold text-gray-900 mt-1">{totalStudents}</h3>
-              <p className="text-xs text-blue-600 font-medium mt-1">Across all cohorts</p>
+              <p className="text-xs font-bold text-cocoa-500">طلبة مشاركين</p>
+              <h3 className="font-display text-3xl text-teal-700 mt-1">{totalStudents}</h3>
             </div>
-            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+            <div className="w-12 h-12 bg-teal-50 text-teal-700 rounded-2xl rounded-br-sm flex items-center justify-center">
               <Users className="w-6 h-6" />
             </div>
           </div>
         </Card>
 
-        <Card className="hover:border-emerald-200">
+        <Card className="hover:border-gold-200 !border-t-4 !border-t-gold-400">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Average Class Score
-              </p>
-              <h3 className="text-3xl font-bold text-gray-900 mt-1">{avgScore}</h3>
-              <p className="text-xs text-emerald-600 font-medium mt-1">Overall proficiency</p>
+              <p className="text-xs font-bold text-cocoa-500">متوسط الدرجات</p>
+              <h3 className="font-display text-3xl text-gold-600 mt-1">{avgScore}</h3>
             </div>
-            <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+            <div className="w-12 h-12 bg-gold-100 text-gold-600 rounded-2xl rounded-br-sm flex items-center justify-center">
               <Award className="w-6 h-6" />
             </div>
           </div>
         </Card>
 
-        <Card className="hover:border-purple-200">
+        <Card className="hover:border-cocoa-300 !border-t-4 !border-t-cocoa-500">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Submissions
-              </p>
-              <h3 className="text-3xl font-bold text-gray-900 mt-1">{totalAttempts}</h3>
-              <p className="text-xs text-purple-600 font-medium mt-1">Completed attempts</p>
+              <p className="text-xs font-bold text-cocoa-500">محاولات مسلّمة</p>
+              <h3 className="font-display text-3xl text-cocoa-800 mt-1">{totalAttempts}</h3>
             </div>
-            <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center">
+            <div className="w-12 h-12 bg-sand text-cocoa-800 rounded-2xl rounded-br-sm flex items-center justify-center">
               <TrendingUp className="w-6 h-6" />
             </div>
           </div>
@@ -193,31 +186,31 @@ const ProfessorDashboard = () => {
         {/* Recent Exams List (2 cols on large screen) */}
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-indigo-600" />
-              Recent Assessment Exams
+            <h2 className="text-lg font-extrabold text-ink flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-clay-600" />
+              أحدث الامتحانات
             </h2>
             <Link
               to="/professor/exams"
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+              className="text-xs font-bold text-clay-700 hover:text-clay-600 flex items-center gap-1"
             >
-              View All Exams ({exams.length}) <ArrowRight className="w-3.5 h-3.5" />
+              عرض الكل ({exams.length}) <ArrowLeft className="w-3.5 h-3.5" />
             </Link>
           </div>
 
           {recentExams.length === 0 ? (
             <Card className="text-center py-12">
-              <div className="w-12 h-12 bg-indigo-50 text-indigo-500 rounded-full flex items-center justify-center mx-auto mb-3">
-                <BookOpen className="w-6 h-6" />
+              <div className="w-14 h-14 bg-clay-100 text-clay-600 rounded-2xl rounded-br-sm flex items-center justify-center mx-auto mb-3 -rotate-3">
+                <Code2 className="w-7 h-7" />
               </div>
-              <h4 className="text-base font-semibold text-gray-800">No exams generated yet</h4>
-              <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
-                Upload your course curriculum and let our AI engine generate grounded questions.
+              <h4 className="text-base font-bold text-ink">لسه مفيش امتحانات متولّدة</h4>
+              <p className="text-xs text-cocoa-500 mt-1 max-w-sm mx-auto leading-relaxed">
+                ارفع ملف المنهج الأول، وسيب للذكاء الاصطناعي يولّد أسئلة منه.
               </p>
               <div className="mt-4">
                 <Link to="/professor/generate">
                   <Button size="sm" icon={Sparkles}>
-                    Generate First Exam
+                    ولّد أول امتحان
                   </Button>
                 </Link>
               </div>
@@ -236,14 +229,15 @@ const ProfessorDashboard = () => {
                 return (
                   <Card
                     key={examId || Math.random()}
-                    className="p-5 hover:border-indigo-300 transition-all cursor-pointer"
+                    className="p-5 hover:border-gold-400 transition-all cursor-pointer"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <Link
                             to={`/professor/exams/${examId}`}
-                            className="font-semibold text-gray-900 hover:text-indigo-600 transition-colors"
+                            className="font-bold text-ink hover:text-clay-600 transition-colors"
+                            dir="auto"
                           >
                             {exam.title || exam.topic || `Exam #${examId}`}
                           </Link>
@@ -254,21 +248,21 @@ const ProfessorDashboard = () => {
                             <Badge type="bloom">{exam.bloom_level}</Badge>
                           )}
                         </div>
-                        <p className="text-xs text-gray-500">
-                          {exam.lesson_title || exam.lesson || (exam.topic && `Topic: ${exam.topic}`) || 'Curriculum Assessment'}
+                        <p className="text-xs text-cocoa-500" dir="auto">
+                          {exam.lesson_title || exam.lesson || (exam.topic && `Topic: ${exam.topic}`) || 'امتحان من المنهج'}
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-4 text-xs text-gray-600 shrink-0">
-                        <span className="bg-gray-50 px-2.5 py-1 rounded-md border border-gray-100 font-medium">
-                          {questionCount} Questions
+                      <div className="flex items-center gap-3 text-xs text-cocoa-500 shrink-0">
+                        <span className="bg-cream px-2.5 py-1 rounded-lg border border-sand font-bold">
+                          {questionCount} سؤال
                         </span>
-                        <span className="bg-gray-50 px-2.5 py-1 rounded-md border border-gray-100 font-medium">
-                          {totalPoints} Points
+                        <span className="bg-cream px-2.5 py-1 rounded-lg border border-sand font-bold">
+                          {totalPoints} درجة
                         </span>
                         <Link to={`/professor/exams/${examId}`}>
                           <Button variant="outline" size="sm">
-                            Inspect
+                            التفاصيل
                           </Button>
                         </Link>
                       </div>
@@ -283,67 +277,67 @@ const ProfessorDashboard = () => {
         {/* Class Performance Summary / Quick Analytics (1 col) */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-indigo-600" />
-              Class Insights
+            <h2 className="text-lg font-extrabold text-ink flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-clay-600" />
+              لمحة سريعة
             </h2>
             <Link
               to="/professor/analytics"
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+              className="text-xs font-bold text-clay-700 hover:text-clay-600"
             >
-              Full Analytics &rarr;
+              التحليلات الكاملة ←
             </Link>
           </div>
 
-          <Card title="Cohort Performance" subtitle="Distribution across proficiency bands">
+          <Card title="توزيع مستوى الطلبة" subtitle="حسب مجموعات الذكاء الاصطناعي">
             {hasClusterData ? (
               <div className="space-y-3 mt-2">
                 {Object.entries(clusterCounts).map(([name, count]) => (
                   <div key={name} className="flex items-center justify-between text-xs">
-                    <span className="font-medium capitalize text-gray-700">{name}</span>
-                    <span className="font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                      {count} students
+                    <span className="font-bold text-cocoa-800">{name}</span>
+                    <span className="font-bold text-clay-700 bg-clay-100 px-2 py-0.5 rounded-full">
+                      {count} طالب
                     </span>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-center py-6 text-gray-500 space-y-2">
-                <HelpCircle className="w-8 h-8 mx-auto text-gray-300" />
-                <p className="text-xs">No clustering run yet for this cohort.</p>
+              <div className="text-center py-6 text-cocoa-500 space-y-2">
+                <HelpCircle className="w-8 h-8 mx-auto text-cocoa-300" />
+                <p className="text-xs">لسه مفيش تجميع (Clustering) للفصل ده.</p>
                 <Link to="/professor/analytics">
                   <Button variant="outline" size="sm" className="mt-2 text-xs">
-                    Run ML Clustering
+                    شغّل التجميع الذكي
                   </Button>
                 </Link>
               </div>
             )}
           </Card>
 
-          <Card title="Quick Action Guide">
-            <ul className="space-y-3 text-xs text-gray-600">
+          <Card title="إزاي تبدأ؟">
+            <ul className="space-y-3 text-xs text-cocoa-500 leading-relaxed">
               <li className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center shrink-0 text-[11px]">
-                  1
+                <span className="w-5 h-5 rounded-lg rounded-br-sm bg-clay-100 text-clay-700 font-bold flex items-center justify-center shrink-0 text-[11px]">
+                  ١
                 </span>
                 <span>
-                  <strong>Upload PDF:</strong> Provide your curriculum text book or lecture slides to vectorize context.
+                  <strong className="text-cocoa-800">ارفع المنهج:</strong> ارفع الكتاب أو المحاضرات PDF عشان المنصة تفهم محتواه.
                 </span>
               </li>
               <li className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center shrink-0 text-[11px]">
-                  2
+                <span className="w-5 h-5 rounded-lg rounded-br-sm bg-clay-100 text-clay-700 font-bold flex items-center justify-center shrink-0 text-[11px]">
+                  ٢
                 </span>
                 <span>
-                  <strong>Configure Generation:</strong> Choose Bloom's taxonomy level, difficulty, and question breakdown.
+                  <strong className="text-cocoa-800">اضبط التوليد:</strong> اختار مستوى بلوم والصعوبة وعدد الأسئلة.
                 </span>
               </li>
               <li className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center shrink-0 text-[11px]">
-                  3
+                <span className="w-5 h-5 rounded-lg rounded-br-sm bg-clay-100 text-clay-700 font-bold flex items-center justify-center shrink-0 text-[11px]">
+                  ٣
                 </span>
                 <span>
-                  <strong>Analyze Results:</strong> Use semantic clustering to locate struggling students and knowledge gaps.
+                  <strong className="text-cocoa-800">حلّل النتائج:</strong> شوف الطلبة اللي محتاجين مساعدة ومواضيع الضعف.
                 </span>
               </li>
             </ul>

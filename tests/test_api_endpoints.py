@@ -40,6 +40,9 @@ Base.metadata.create_all(bind=engine)
 class ApiEndpointsTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # Re-assert this module's DB override in case another test module
+        # registered its own override on the shared app singleton earlier.
+        app.dependency_overrides[get_db] = override_get_db
         cls.client = TestClient(app)
 
     def test_01_health_check(self):
@@ -146,6 +149,27 @@ class ApiEndpointsTestCase(unittest.TestCase):
             )
         self.assertEqual(login_response.status_code, 200)
         headers = {"Authorization": f"Bearer {login_response.json()['access_token']}"}
+
+        # Create a professor-owned textbook so generation can reference it
+        from datetime import datetime, timezone as tz
+        from app.models import Curriculum, User as UserModel
+        db = TestingSessionLocal()
+        professor = db.query(UserModel).filter_by(email="drsmith@university.edu").first()
+        curriculum = Curriculum(
+            filename="curriculum.pdf",
+            lessons_json=json.dumps([
+                {"lesson_id": "1-1", "lesson_title": "Lesson One"},
+            ]),
+            vector_store_path="data/processed/chroma_db",
+            professor_id=professor.id,
+            collection_name=f"curriculum_test_{professor.id}",
+            uploaded_at=datetime.now(tz.utc),
+        )
+        db.add(curriculum)
+        db.commit()
+        curriculum_id = curriculum.id
+        db.close()
+
         docs = []
         for index in range(20):
             chunk_id = f"1-1-{index + 1:03d}"
@@ -205,6 +229,7 @@ class ApiEndpointsTestCase(unittest.TestCase):
                 "/api/exams/generate",
                 headers=headers,
                 json={
+                    "curriculum_id": curriculum_id,
                     "lesson_id": "1-1",
                     "topic": "Lesson One",
                     "difficulty": "medium",
@@ -217,6 +242,7 @@ class ApiEndpointsTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         self.assertEqual(response.json()["question_count"], 20)
         self.assertEqual(len(response.json()["questions"]), 20)
+        self.assertEqual(response.json()["curriculum_id"], curriculum_id)
 
     @patch("app.routers.analytics_router.generate_student_feedback")
     def test_04_student_dashboard(self, mock_feedback):
