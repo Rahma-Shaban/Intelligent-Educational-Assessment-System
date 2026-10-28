@@ -30,6 +30,8 @@ import {
   updateQuestionBankItem,
   approveQuestionBankItem,
   rejectQuestionBankItem,
+  getCleanedDataset,
+  getCleanedDatasetProvenance,
 } from '../../api/client';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -114,6 +116,33 @@ const QuestionBank = () => {
     correct_answer: '',
   });
 
+  // Active View Tab: 'production' | 'cleaned_dataset'
+  const [activeTab, setActiveTab] = useState('production');
+
+  // Cleaned Dataset State
+  const [cleanedQuestions, setCleanedQuestions] = useState([]);
+  const [cleanedProvenance, setCleanedProvenance] = useState(null);
+  const [cleanedFiltersAvailable, setCleanedFiltersAvailable] = useState({});
+  const [cleanedLoading, setCleanedLoading] = useState(false);
+  const [cleanedError, setCleanedError] = useState(null);
+  const [cleanedPage, setCleanedPage] = useState(1);
+  const [cleanedPageSize] = useState(15);
+  const [cleanedTotal, setCleanedTotal] = useState(0);
+  const [cleanedTotalPages, setCleanedTotalPages] = useState(1);
+  const [cleanedLoadedOnce, setCleanedLoadedOnce] = useState(false);
+
+  // Cleaned Dataset Filters
+  const [cleanedSearch, setCleanedSearch] = useState('');
+  const [cleanedTypeFilter, setCleanedTypeFilter] = useState('');
+  const [cleanedChapterFilter, setCleanedChapterFilter] = useState('');
+  const [cleanedLessonFilter, setCleanedLessonFilter] = useState('');
+  const [cleanedVerificationFilter, setCleanedVerificationFilter] = useState('');
+
+  // Cleaned Question Detail Modal & UI State
+  const [selectedCleanedQuestion, setSelectedCleanedQuestion] = useState(null);
+  const [cleanedDetailModalOpen, setCleanedDetailModalOpen] = useState(false);
+  const [copiedHash, setCopiedHash] = useState(false);
+
   // Fetch Questions
   const fetchQuestions = useCallback(async () => {
     setLoading(true);
@@ -160,6 +189,56 @@ const QuestionBank = () => {
   useEffect(() => {
     fetchStats();
   }, []);
+
+  // Fetch Cleaned Dataset (Read-only, Isolated)
+  const fetchCleanedDataset = useCallback(async () => {
+    setCleanedLoading(true);
+    setCleanedError(null);
+    try {
+      const params = {
+        page: cleanedPage,
+        page_size: cleanedPageSize,
+      };
+      if (cleanedSearch.trim()) params.search = cleanedSearch.trim();
+      if (cleanedTypeFilter) params.question_type = cleanedTypeFilter;
+      if (cleanedChapterFilter) params.chapter = cleanedChapterFilter;
+      if (cleanedLessonFilter) params.lesson = cleanedLessonFilter;
+      if (cleanedVerificationFilter) params.verification_status = cleanedVerificationFilter;
+
+      const data = await getCleanedDataset(params);
+      setCleanedQuestions(data.items || []);
+      setCleanedProvenance(data.provenance || null);
+      setCleanedFiltersAvailable(data.filters_available || {});
+      setCleanedTotal(data.total || 0);
+      setCleanedTotalPages(data.total_pages || 1);
+      setCleanedLoadedOnce(true);
+    } catch (err) {
+      setCleanedError(err?.response?.data?.detail || 'فشل في تحميل مجموعة البيانات المنقحة.');
+    } finally {
+      setCleanedLoading(false);
+    }
+  }, [cleanedPage, cleanedPageSize, cleanedSearch, cleanedTypeFilter, cleanedChapterFilter, cleanedLessonFilter, cleanedVerificationFilter]);
+
+  useEffect(() => {
+    if (activeTab === 'cleaned_dataset') {
+      fetchCleanedDataset();
+    }
+  }, [activeTab, fetchCleanedDataset]);
+
+  const handleCleanedSearchSubmit = (e) => {
+    e.preventDefault();
+    setCleanedPage(1);
+    fetchCleanedDataset();
+  };
+
+  const handleCopyHash = (hash) => {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(hash);
+      setCopiedHash(true);
+      setTimeout(() => setCopiedHash(false), 2000);
+    }
+  };
+
 
   // Handle Search submit
   const handleSearchSubmit = (e) => {
@@ -406,6 +485,48 @@ const QuestionBank = () => {
         </div>
       </div>
 
+      {/* View Switcher: Production Question Bank vs Cleaned Dataset */}
+      <div className="flex border-b border-cocoa-200">
+        <button
+          type="button"
+          onClick={() => setActiveTab('production')}
+          className={`flex items-center gap-2 px-5 py-3 border-b-2 font-medium text-sm transition-colors ${
+            activeTab === 'production'
+              ? 'border-gold-500 text-cocoa-900 font-bold bg-gold-50/40'
+              : 'border-transparent text-cocoa-500 hover:text-cocoa-700 hover:border-cocoa-300'
+          }`}
+        >
+          <Database className="w-4 h-4" />
+          <span>بنك الأسئلة المعتمد (الإنتاجي)</span>
+          {stats && (
+            <span className="px-2 py-0.5 text-xs rounded-full bg-cocoa-100 text-cocoa-700 font-semibold">
+              {stats.total_questions || 0}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('cleaned_dataset');
+            if (!cleanedLoadedOnce) {
+              fetchCleanedDataset();
+            }
+          }}
+          className={`flex items-center gap-2 px-5 py-3 border-b-2 font-medium text-sm transition-colors ${
+            activeTab === 'cleaned_dataset'
+              ? 'border-gold-500 text-cocoa-900 font-bold bg-gold-50/40'
+              : 'border-transparent text-cocoa-500 hover:text-cocoa-700 hover:border-cocoa-300'
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          <span>مجموعة البيانات المنقحة (Cleaned Dataset)</span>
+          <span className="px-2 py-0.5 text-xs rounded-full bg-emerald-100 text-emerald-800 font-semibold">
+            {cleanedProvenance ? `${cleanedProvenance.valid_rows} سؤال` : '317 سؤال'}
+          </span>
+        </button>
+      </div>
+
       {/* Alerts */}
       {error && (
         <Alert variant="danger" dismissible onDismiss={() => setError(null)}>
@@ -418,6 +539,8 @@ const QuestionBank = () => {
         </Alert>
       )}
 
+{activeTab === 'production' && (
+        <>
       {/* Statistics Cards */}
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
@@ -827,6 +950,414 @@ const QuestionBank = () => {
               التالي <ChevronLeft className="w-4 h-4 mr-1" />
             </Button>
           </div>
+        </div>
+      )}
+
+        </>
+      )}
+
+      {/* =========================================================================
+          VIEW 2: CLEANED QUESTION BANK DATASET (READ-ONLY)
+         ========================================================================= */}
+      {activeTab === 'cleaned_dataset' && (
+        <div className="space-y-4">
+          {/* Provenance & Cryptographic Audit Banner */}
+          <Card className="p-4 bg-gradient-to-br from-white via-cocoa-50/30 to-gold-50/20 border-cocoa-200 shadow-sm">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-3 border-b border-cocoa-100">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-bold font-display text-cocoa-900">
+                      مجموعة بيانات بنك الأسئلة المنقحة والمحققة
+                    </h2>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      بيانات موثوقة (317 سؤالاً)
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-cocoa-100 text-cocoa-700">
+                      للقراءة فقط (Read-Only)
+                    </span>
+                  </div>
+                  <p className="text-xs text-cocoa-600 mt-0.5">
+                    مجموعة أسئلة تم تنقيحها والتحقق من صحة صياغتها وإجاباتها عبر مرحلة إعداد البيانات، معزولة تماماً عن قاعدة البيانات الإنتاجية.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchCleanedDataset}
+                  loading={cleanedLoading}
+                  className="flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>تحديث العرض</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* Provenance Metadata Grid */}
+            {cleanedProvenance && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3">
+                <div className="p-2.5 rounded-lg bg-white border border-cocoa-100">
+                  <div className="text-[11px] text-cocoa-500 font-medium">ملف البيانات ومساره</div>
+                  <div className="text-xs font-bold font-code text-cocoa-900 truncate mt-0.5" title={cleanedProvenance.file_path}>
+                    {cleanedProvenance.file_path.split('\\').pop() || cleanedProvenance.file_path}
+                  </div>
+                  <div className="text-[10px] text-cocoa-400 mt-0.5">
+                    الحجم: {(cleanedProvenance.file_size_bytes / 1024).toFixed(1)} ك.ب | الورقة: {cleanedProvenance.sheet_name}
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-white border border-cocoa-100">
+                  <div className="text-[11px] text-cocoa-500 font-medium">البصمة الرقمية (SHA-256)</div>
+                  <div className="flex items-center justify-between gap-1 mt-0.5">
+                    <span className="text-xs font-code font-bold text-cocoa-800 truncate" title={cleanedProvenance.sha256_hash}>
+                      {cleanedProvenance.sha256_hash.substring(0, 16)}...
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyHash(cleanedProvenance.sha256_hash)}
+                      className="p-1 text-cocoa-400 hover:text-gold-600 transition shrink-0"
+                      title="نسخ البصمة كاملة"
+                    >
+                      {copiedHash ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  <div className="text-[10px] text-cocoa-400 mt-0.5">
+                    {copiedHash ? 'تم نسخ التجزئة للحافظة' : 'للتحقق من سلامة البيانات'}
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-white border border-cocoa-100">
+                  <div className="text-[11px] text-cocoa-500 font-medium">إحصائيات الأسئلة</div>
+                  <div className="text-xs font-bold text-cocoa-900 mt-0.5">
+                    {cleanedProvenance.valid_rows} سؤال صالح (0 تالف)
+                  </div>
+                  <div className="text-[10px] text-cocoa-500 mt-0.5">
+                    168 اختيار من متعدد + 149 مقالي
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-white border border-cocoa-100">
+                  <div className="text-[11px] text-cocoa-500 font-medium">تصنيفات الصعوبة وبلوم</div>
+                  <div className="text-xs font-bold text-amber-700 mt-0.5 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    <span>غير مدرجة (غير مصطنعة)</span>
+                  </div>
+                  <div className="text-[10px] text-cocoa-400 mt-0.5">
+                    النشط للأسئلة الجديدة: RAG + LLM
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Clarification Alert */}
+            <div className="mt-3 p-2.5 rounded-lg bg-amber-50/70 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">سياسة الموثوقية وعدم اصطناع التسميات: </span>
+                مجموعة البيانات المنقحة تحتوي على صياغات الأسئلة، الخيارات، والإجابات النموذجية المحققة، ولكنها لا تحتوي على تسميات مسبقة للصعوبة أو مستويات بلوم. لا يقوم النظام باختلاق أي تصنيفات وهمية لتدريب نموذج مراقب غير دقيق، ويبقى تصنيف RAG/LLM هو المعتمد. التصفح هنا للقراءة فقط ولا يُعدّل قاعدة البيانات.
+              </div>
+            </div>
+          </Card>
+
+          {/* Cleaned Dataset Filters */}
+          <Card className="p-4 bg-white border-cocoa-100">
+            <form onSubmit={handleCleanedSearchSubmit} className="flex flex-col md:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute right-3 top-3 text-cocoa-400" />
+                <input
+                  type="text"
+                  value={cleanedSearch}
+                  onChange={(e) => setCleanedSearch(e.target.value)}
+                  placeholder="ابحث في نص السؤال، الإجابة، أو المعرف الأصلي..."
+                  className="w-full pr-9 pl-4 py-2 border border-cocoa-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gold-500"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={cleanedTypeFilter}
+                  onChange={(e) => {
+                    setCleanedTypeFilter(e.target.value);
+                    setCleanedPage(1);
+                  }}
+                  className="px-3 py-2 border border-cocoa-200 rounded-lg text-xs bg-white text-cocoa-800"
+                >
+                  <option value="">جميع أنواع الأسئلة</option>
+                  <option value="mcq">اختيار من متعدد (MCQ)</option>
+                  <option value="essay">سؤال مقالي (Essay)</option>
+                </select>
+
+                <select
+                  value={cleanedChapterFilter}
+                  onChange={(e) => {
+                    setCleanedChapterFilter(e.target.value);
+                    setCleanedPage(1);
+                  }}
+                  className="px-3 py-2 border border-cocoa-200 rounded-lg text-xs bg-white text-cocoa-800 max-w-[160px]"
+                >
+                  <option value="">جميع الفصول</option>
+                  {(cleanedFiltersAvailable.chapters || []).map((ch) => (
+                    <option key={ch} value={ch}>
+                      {ch}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={cleanedLessonFilter}
+                  onChange={(e) => {
+                    setCleanedLessonFilter(e.target.value);
+                    setCleanedPage(1);
+                  }}
+                  className="px-3 py-2 border border-cocoa-200 rounded-lg text-xs bg-white text-cocoa-800 max-w-[160px]"
+                >
+                  <option value="">جميع الدروس</option>
+                  {(cleanedFiltersAvailable.lessons || []).map((ls) => (
+                    <option key={ls} value={ls}>
+                      {ls}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={cleanedVerificationFilter}
+                  onChange={(e) => {
+                    setCleanedVerificationFilter(e.target.value);
+                    setCleanedPage(1);
+                  }}
+                  className="px-3 py-2 border border-cocoa-200 rounded-lg text-xs bg-white text-cocoa-800"
+                >
+                  <option value="">حالة التحقق</option>
+                  {(cleanedFiltersAvailable.verification_statuses || []).map((v) => (
+                    <option key={v} value={v}>
+                      {v === 'verified' ? 'متحقق منه (verified)' : v}
+                    </option>
+                  ))}
+                </select>
+
+                <Button type="submit" variant="secondary" size="sm">
+                  بحث
+                </Button>
+
+                {(cleanedSearch || cleanedTypeFilter || cleanedChapterFilter || cleanedLessonFilter || cleanedVerificationFilter) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setCleanedSearch('');
+                      setCleanedTypeFilter('');
+                      setCleanedChapterFilter('');
+                      setCleanedLessonFilter('');
+                      setCleanedVerificationFilter('');
+                      setCleanedPage(1);
+                    }}
+                  >
+                    مسح التصفية
+                  </Button>
+                )}
+              </div>
+            </form>
+          </Card>
+
+          {/* Cleaned Dataset Question List */}
+          <div className="space-y-3">
+            {cleanedLoading ? (
+              <div className="py-12 flex justify-center">
+                <LoadingSpinner message="جاري استعلام مجموعة البيانات المنقحة..." />
+              </div>
+            ) : cleanedError ? (
+              <Alert variant="danger">{cleanedError}</Alert>
+            ) : cleanedQuestions.length === 0 ? (
+              <Card className="p-12 text-center bg-white border-dashed border-cocoa-200">
+                <div className="w-12 h-12 rounded-full bg-cocoa-100 flex items-center justify-center mx-auto text-cocoa-500 mb-3">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-cocoa-900 mb-1">لا توجد أسئلة تطابق معايير التصفية</h3>
+                <p className="text-xs text-cocoa-500 max-w-sm mx-auto mb-4">
+                  جرب تغيير نص البحث أو إزالة بعض خيارات التصفية لعرض أسئلة المجموعة المنقحة.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setCleanedSearch('');
+                    setCleanedTypeFilter('');
+                    setCleanedChapterFilter('');
+                    setCleanedLessonFilter('');
+                    setCleanedVerificationFilter('');
+                    setCleanedPage(1);
+                  }}
+                >
+                  إعادة ضبط التصفية
+                </Button>
+              </Card>
+            ) : (
+              cleanedQuestions.map((q) => (
+                <Card
+                  key={q.question_id}
+                  className="p-4 bg-white border-cocoa-100 hover:border-emerald-300 transition shadow-sm"
+                >
+                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
+                    <div className="flex-1 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-code text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                          {q.question_id}
+                        </span>
+                        {q.original_question_id && q.original_question_id !== q.question_id && (
+                          <span className="font-code text-xs text-cocoa-500 bg-cocoa-100 px-2 py-0.5 rounded" title="المعرف الأصلي قبل التنقيح">
+                            أصل: {q.original_question_id}
+                          </span>
+                        )}
+                        <span className="text-xs font-medium text-cocoa-700 bg-cocoa-50 border border-cocoa-200 px-2 py-0.5 rounded">
+                          {q.question_type === 'mcq' ? 'اختيار من متعدد' : 'سؤال مقالي'}
+                        </span>
+                        {q.verification_status && (
+                          <span className="text-xs font-medium text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded flex items-center gap-1 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            {q.verification_status === 'verified' ? 'متحقق منه' : q.verification_status}
+                          </span>
+                        )}
+                        {q.chapter && (
+                          <span className="text-xs text-cocoa-700 bg-cocoa-100/70 px-2 py-0.5 rounded">
+                            {q.chapter}
+                          </span>
+                        )}
+                        {q.lesson && (
+                          <span className="text-xs text-cocoa-600 flex items-center gap-1">
+                            <BookOpen className="w-3 h-3 text-cocoa-400" />
+                            {q.lesson}
+                          </span>
+                        )}
+                        {q.page_number && (
+                          <span className="text-xs text-cocoa-500">
+                            ص {q.page_number}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-sm font-semibold text-cocoa-900 leading-relaxed" dir="auto">
+                        {q.question_text}
+                      </div>
+
+                      {/* Options for MCQ */}
+                      {q.question_type === 'mcq' && q.options && q.options.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1 text-xs text-cocoa-700">
+                          {q.options.map((opt, i) => {
+                            const letter = ['A', 'B', 'C', 'D'][i];
+                            const isCorrect = q.correct_option === letter || q.correct_answer === opt;
+                            return (
+                              <div
+                                key={i}
+                                className={`p-2 rounded border text-xs flex items-center gap-2 ${
+                                  isCorrect
+                                    ? 'bg-emerald-50 border-emerald-300 font-semibold text-emerald-950 shadow-sm'
+                                    : 'bg-cocoa-50/40 border-cocoa-200'
+                                }`}
+                              >
+                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
+                                  isCorrect ? 'bg-emerald-600 text-white' : 'bg-cocoa-200 text-cocoa-700'
+                                }`}>
+                                  {letter}
+                                </span>
+                                <span className="truncate" dir="auto">{opt}</span>
+                                {isCorrect && (
+                                  <span className="mr-auto text-[11px] text-emerald-700 font-bold flex items-center gap-0.5">
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span>صحيح</span>
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Essay Model Answer */}
+                      {q.question_type !== 'mcq' && q.correct_answer && (
+                        <div className="mt-2 p-2.5 rounded-lg bg-emerald-50/60 border border-emerald-200 text-xs">
+                          <span className="font-bold text-emerald-900 block mb-1">الإجابة النموذجية المعتمدة:</span>
+                          <div className="text-emerald-950 font-medium leading-relaxed" dir="auto">
+                            {q.correct_answer}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Metadata Footer */}
+                      <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-cocoa-500">
+                        {q.source_file && (
+                          <div className="flex items-center gap-1">
+                            <span>الملف المصدري:</span>
+                            <span className="font-code text-cocoa-700">{q.source_file}</span>
+                          </div>
+                        )}
+                        {q.answer_source && (
+                          <div className="flex items-center gap-1">
+                            <span>مصدر الإجابة:</span>
+                            <span className="text-cocoa-700 font-medium">{q.answer_source}</span>
+                          </div>
+                        )}
+                        {q.Source && (
+                          <div className="text-cocoa-500">
+                            المصدر: <span className="font-medium text-cocoa-700">{q.Source}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* View Details Button */}
+                    <div className="flex md:flex-col items-center md:items-end justify-end shrink-0 pt-2 md:pt-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedCleanedQuestion(q);
+                          setCleanedDetailModalOpen(true);
+                        }}
+                        className="flex items-center gap-1 text-xs"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>التفاصيل الكاملة</span>
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+
+          {/* Cleaned Dataset Pagination */}
+          {cleanedTotalPages > 1 && (
+            <div className="flex items-center justify-between pt-4 border-t border-cocoa-200">
+              <div className="text-xs text-cocoa-500">
+                عرض صفحة {cleanedPage} من {cleanedTotalPages} (إجمالي {cleanedTotal} سؤالاً)
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={cleanedPage <= 1}
+                  onClick={() => setCleanedPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronRight className="w-4 h-4 ml-1" /> السابق
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={cleanedPage >= cleanedTotalPages}
+                  onClick={() => setCleanedPage((p) => Math.min(cleanedTotalPages, p + 1))}
+                >
+                  التالي <ChevronLeft className="w-4 h-4 mr-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1344,6 +1875,122 @@ const QuestionBank = () => {
               </Button>
               <Button variant="primary" onClick={handleSaveManualQuestion} loading={loading}>
                 حفظ في بنك الأسئلة
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {/* =========================================================================
+          MODAL: Cleaned Question Full Details
+         ========================================================================= */}
+      {cleanedDetailModalOpen && selectedCleanedQuestion && (
+        <Modal
+          isOpen={cleanedDetailModalOpen}
+          onClose={() => setCleanedDetailModalOpen(false)}
+          title={`تفاصيل السؤال من المجموعة المنقحة: ${selectedCleanedQuestion.question_id}`}
+          size="lg"
+        >
+          <div className="space-y-4 text-cocoa-900 text-sm" dir="rtl">
+            <div>
+              <div className="text-xs text-cocoa-500 font-medium mb-1">نص السؤال:</div>
+              <div className="p-3 bg-cocoa-50 rounded-lg font-medium text-cocoa-900 border border-cocoa-200 leading-relaxed" dir="auto">
+                {selectedCleanedQuestion.question_text}
+              </div>
+            </div>
+
+            {selectedCleanedQuestion.question_type === 'mcq' && (
+              <div>
+                <div className="text-xs text-cocoa-500 font-medium mb-1.5">خيارات الإجابة:</div>
+                <div className="space-y-1.5">
+                  {['option_A', 'option_B', 'option_C', 'option_D'].map((optKey, idx) => {
+                    const letter = ['A', 'B', 'C', 'D'][idx];
+                    const optVal = selectedCleanedQuestion[optKey];
+                    const isCorrect = selectedCleanedQuestion.correct_option === letter;
+                    if (!optVal) return null;
+                    return (
+                      <div
+                        key={letter}
+                        className={`p-2.5 rounded-lg border text-xs flex items-center justify-between ${
+                          isCorrect
+                            ? 'bg-emerald-50 border-emerald-300 font-bold text-emerald-900'
+                            : 'bg-white border-cocoa-200 text-cocoa-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
+                            isCorrect ? 'bg-emerald-600 text-white' : 'bg-cocoa-200 text-cocoa-700'
+                          }`}>
+                            {letter}
+                          </span>
+                          <span dir="auto">{optVal}</span>
+                        </div>
+                        {isCorrect && (
+                          <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            الخيار الصحيح
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <div className="text-xs text-cocoa-500 font-medium mb-1">الإجابة النموذجية المعتمدة:</div>
+              <div className="p-3 bg-emerald-50/60 rounded-lg font-medium text-emerald-950 border border-emerald-200 leading-relaxed" dir="auto">
+                {selectedCleanedQuestion.correct_answer || 'غير متوفرة'}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 pt-2 border-t border-cocoa-100 text-xs">
+              <div className="p-2 rounded bg-cocoa-50/60 border border-cocoa-200">
+                <span className="text-cocoa-500 block">المعرف الأصلي:</span>
+                <span className="font-code font-bold text-cocoa-800">{selectedCleanedQuestion.original_question_id || 'غير متوفر'}</span>
+              </div>
+              <div className="p-2 rounded bg-cocoa-50/60 border border-cocoa-200">
+                <span className="text-cocoa-500 block">نوع السؤال:</span>
+                <span className="font-bold text-cocoa-800">{selectedCleanedQuestion.question_type === 'mcq' ? 'اختيار من متعدد' : 'سؤال مقالي'}</span>
+              </div>
+              <div className="p-2 rounded bg-cocoa-50/60 border border-cocoa-200">
+                <span className="text-cocoa-500 block">حالة التحقق:</span>
+                <span className="font-bold text-emerald-700">{selectedCleanedQuestion.verification_status || 'verified'}</span>
+              </div>
+              <div className="p-2 rounded bg-cocoa-50/60 border border-cocoa-200">
+                <span className="text-cocoa-500 block">الفصل:</span>
+                <span className="font-bold text-cocoa-800">{selectedCleanedQuestion.chapter || 'غير محدد'}</span>
+              </div>
+              <div className="p-2 rounded bg-cocoa-50/60 border border-cocoa-200">
+                <span className="text-cocoa-500 block">الدرس:</span>
+                <span className="font-bold text-cocoa-800">{selectedCleanedQuestion.lesson || 'غير محدد'}</span>
+              </div>
+              <div className="p-2 rounded bg-cocoa-50/60 border border-cocoa-200">
+                <span className="text-cocoa-500 block">رقم الصفحة:</span>
+                <span className="font-bold text-cocoa-800">{selectedCleanedQuestion.page_number || 'غير متوفر'}</span>
+              </div>
+              <div className="p-2 rounded bg-cocoa-50/60 border border-cocoa-200">
+                <span className="text-cocoa-500 block">الملف المصدري:</span>
+                <span className="font-code font-bold text-cocoa-800 truncate block">{selectedCleanedQuestion.source_file || 'غير متوفر'}</span>
+              </div>
+              <div className="p-2 rounded bg-cocoa-50/60 border border-cocoa-200">
+                <span className="text-cocoa-500 block">مصدر الإجابة:</span>
+                <span className="font-bold text-cocoa-800">{selectedCleanedQuestion.answer_source || 'غير متوفر'}</span>
+              </div>
+              <div className="p-2 rounded bg-cocoa-50/60 border border-cocoa-200">
+                <span className="text-cocoa-500 block">المصدر:</span>
+                <span className="font-bold text-cocoa-800">{selectedCleanedQuestion.Source || 'غير متوفر'}</span>
+              </div>
+            </div>
+
+            <div className="p-2.5 rounded bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+              <span className="font-bold">ملاحظة: </span>
+              هذا السجل مسترجع مباشرة من مجموعة البيانات المنقحة (ملف الإكسل الأصلي الموثق) دون أي إدراج في قاعدة بيانات النظام الإنتاجية أو تعديل.
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-cocoa-200">
+              <Button variant="outline" size="sm" onClick={() => setCleanedDetailModalOpen(false)}>
+                إغلاق
               </Button>
             </div>
           </div>

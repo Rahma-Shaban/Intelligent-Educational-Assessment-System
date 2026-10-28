@@ -25,6 +25,7 @@ httpx
 # Machine learning (analytics)
 scikit-learn
 matplotlib
+openpyxl
 
 # Evaluation & Observability
 ragas

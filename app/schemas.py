@@ -552,3 +552,64 @@ class QuestionClassificationResponse(BaseModel):
     review_reasons: list[str] = Field(default_factory=list)
     supporting_chunks: list[dict[str, Any]] = Field(default_factory=list)
     persisted_item: QuestionBankItemResponse | None = None
+
+
+# ---------------------------------------------------------------------------
+# Cleaned Question Bank Dataset Schemas
+# ---------------------------------------------------------------------------
+
+
+class CleanedDatasetItem(BaseModel):
+    """Normalized record from the verified cleaned question dataset."""
+
+    question_id: str
+    original_question_id: str | None = None
+    question_type: str
+    question_text: str
+    options: list[str] = Field(default_factory=list)
+    option_A: str | None = None
+    option_B: str | None = None
+    option_C: str | None = None
+    option_D: str | None = None
+    correct_option: str | None = None
+    correct_answer: str = ""
+    chapter: str | None = None
+    lesson: str | None = None
+    page_number: str | None = None
+    source_file: str | None = None
+    answer_source: str | None = None
+    verification_status: str | None = None
+    Source: str | None = None
+    difficulty: str | None = None
+    bloom_level: str | None = None
+    is_duplicate: bool = False
+
+
+class CleanedDatasetProvenance(BaseModel):
+    """Cryptographic and file metadata for the cleaned dataset."""
+
+    file_path: str
+    file_size_bytes: int
+    sha256_hash: str
+    loaded_at: str
+    sheet_name: str
+    total_raw_rows: int
+    valid_rows: int
+    invalid_rows: int
+    duplicate_rows: int
+    has_difficulty_labels: bool
+    has_bloom_labels: bool
+    difficulty_column: str | None = None
+    bloom_column: str | None = None
+
+
+class CleanedDatasetPaginatedResponse(BaseModel):
+    """Paginated response containing cleaned dataset questions and provenance."""
+
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    items: list[CleanedDatasetItem]
+    provenance: CleanedDatasetProvenance
+    filters_available: dict[str, list[str]] = Field(default_factory=dict)

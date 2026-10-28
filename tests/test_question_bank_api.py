@@ -588,3 +588,87 @@ class TestQuestionBankAPI(unittest.TestCase):
         self.assertNotEqual(body["bloom_level"], "Unknown")
         self.assertNotEqual(body["difficulty"], "Unknown")
 
+
+    # ---------------------------------------------------------------------------
+    # Cleaned Dataset Endpoint Tests (Stage 4 / Cleaned Dataset Integration)
+    # ---------------------------------------------------------------------------
+
+    def test_cleaned_dataset_endpoint_requires_professor(self):
+        """Students or unauthenticated callers cannot access cleaned dataset."""
+        res_no_auth = self.client.get("/api/question-bank/cleaned-dataset")
+        self.assertEqual(res_no_auth.status_code, 401)
+
+        student_headers = {"Authorization": f"Bearer {self.student_token}"}
+        res_student = self.client.get("/api/question-bank/cleaned-dataset", headers=student_headers)
+        self.assertEqual(res_student.status_code, 403)
+
+    def test_cleaned_dataset_endpoint_success(self):
+        """Professors can query paginated cleaned dataset questions with provenance."""
+        headers = {"Authorization": f"Bearer {self.prof_token}"}
+        res = self.client.get("/api/question-bank/cleaned-dataset", params={"page": 1, "page_size": 15}, headers=headers)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+
+        self.assertEqual(data["total"], 317)
+        self.assertEqual(data["page"], 1)
+        self.assertEqual(data["page_size"], 15)
+        self.assertEqual(len(data["items"]), 15)
+        self.assertGreater(data["total_pages"], 1)
+
+        # Check provenance
+        prov = data["provenance"]
+        self.assertEqual(prov["valid_rows"], 317)
+        self.assertEqual(len(prov["sha256_hash"]), 64)
+        self.assertFalse(prov["has_difficulty_labels"])
+        self.assertFalse(prov["has_bloom_labels"])
+
+        # Check item structure
+        first_item = data["items"][0]
+        self.assertIn("question_id", first_item)
+        self.assertIn("question_text", first_item)
+        self.assertIn("question_type", first_item)
+        self.assertIn("correct_answer", first_item)
+
+    def test_cleaned_dataset_endpoint_filtering(self):
+        """Filters by question_type, search, and chapter work accurately."""
+        headers = {"Authorization": f"Bearer {self.prof_token}"}
+
+        # Filter by mcq
+        res_mcq = self.client.get("/api/question-bank/cleaned-dataset", params={"question_type": "mcq"}, headers=headers)
+        self.assertEqual(res_mcq.status_code, 200)
+        data_mcq = res_mcq.json()
+        self.assertEqual(data_mcq["total"], 168)
+        for it in data_mcq["items"]:
+            self.assertEqual(it["question_type"], "mcq")
+            self.assertEqual(len(it["options"]), 4)
+
+        # Filter by essay
+        res_essay = self.client.get("/api/question-bank/cleaned-dataset", params={"question_type": "essay"}, headers=headers)
+        self.assertEqual(res_essay.status_code, 200)
+        data_essay = res_essay.json()
+        self.assertEqual(data_essay["total"], 149)
+        for it in data_essay["items"]:
+            self.assertEqual(it["question_type"], "essay")
+
+    def test_cleaned_dataset_provenance_endpoint(self):
+        """Dedicated provenance endpoint returns valid file metadata."""
+        headers = {"Authorization": f"Bearer {self.prof_token}"}
+        res = self.client.get("/api/question-bank/cleaned-dataset/provenance", headers=headers)
+        self.assertEqual(res.status_code, 200)
+        prov = res.json()
+        self.assertEqual(prov["valid_rows"], 317)
+        self.assertEqual(len(prov["sha256_hash"]), 64)
+
+    def test_cleaned_dataset_does_not_mutate_db(self):
+        """Read-only guarantee: querying the cleaned dataset does NOT write to SQLite."""
+        headers = {"Authorization": f"Bearer {self.prof_token}"}
+        with TestingSessionLocal() as session:
+            count_before = session.query(QuestionBankItem).count()
+
+        res = self.client.get("/api/question-bank/cleaned-dataset", params={"page": 1, "page_size": 50}, headers=headers)
+        self.assertEqual(res.status_code, 200)
+
+        with TestingSessionLocal() as session:
+            count_after = session.query(QuestionBankItem).count()
+
+        self.assertEqual(count_before, count_after, "Cleaned dataset queries must be 100% read-only with zero DB mutations")

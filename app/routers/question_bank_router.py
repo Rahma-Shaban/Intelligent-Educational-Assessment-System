@@ -22,6 +22,9 @@ from app.auth import get_current_user, require_role
 from app.database import get_db
 from app.models import Curriculum, QuestionBankItem, User
 from app.schemas import (
+    CleanedDatasetItem,
+    CleanedDatasetPaginatedResponse,
+    CleanedDatasetProvenance,
     QuestionBankItemCreate,
     QuestionBankItemResponse,
     QuestionBankItemUpdate,
@@ -46,6 +49,7 @@ from scripts.question_bank_service import (
     update_question_item,
 )
 from scripts.question_processing import parse_question_source, process_question_source
+from scripts.dataset_loader import load_cleaned_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -408,6 +412,111 @@ def get_learning_readiness(
     to justify training a supervised model, avoiding premature or invalid training.
     """
     return get_supervised_learning_evaluation(db)
+
+
+@router.get(
+    "/cleaned-dataset",
+    response_model=CleanedDatasetPaginatedResponse,
+    summary="Get paginated items and provenance from the cleaned question bank dataset",
+)
+def get_cleaned_dataset_endpoint(
+    search: Optional[str] = Query(None, description="Search question text or answer"),
+    question_type: Optional[str] = Query(None, description="Filter by type (mcq, essay)"),
+    chapter: Optional[str] = Query(None, description="Filter by chapter"),
+    lesson: Optional[str] = Query(None, description="Filter by lesson"),
+    verification_status: Optional[str] = Query(None, description="Filter by verification status"),
+    answer_source: Optional[str] = Query(None, description="Filter by answer source"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(15, ge=1, le=100, description="Items per page"),
+    current_user: User = Depends(require_role("professor")),
+) -> CleanedDatasetPaginatedResponse:
+    """
+    Safely retrieves paginated questions and provenance from the verified cleaned dataset file.
+    Read-only: does NOT insert, update, or mutate the database in any way.
+    """
+    try:
+        dataset = load_cleaned_dataset()
+    except FileNotFoundError as fnf_err:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Cleaned dataset file could not be found: {fnf_err}",
+        )
+    except Exception as exc:
+        logger.error("Error loading cleaned dataset: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load cleaned dataset: {exc}",
+        )
+
+    records = dataset.records
+
+    if search:
+        search_norm = search.strip().lower()
+        records = [
+            r for r in records
+            if search_norm in r.get("question_text", "").lower()
+            or search_norm in r.get("correct_answer", "").lower()
+            or search_norm in r.get("question_id", "").lower()
+            or search_norm in (r.get("original_question_id") or "").lower()
+        ]
+
+    if question_type:
+        qtype_lower = question_type.strip().lower()
+        records = [r for r in records if r.get("question_type", "").lower() == qtype_lower]
+
+    if chapter:
+        ch_str = chapter.strip()
+        records = [r for r in records if r.get("chapter") == ch_str]
+
+    if lesson:
+        ls_str = lesson.strip()
+        records = [r for r in records if r.get("lesson") == ls_str]
+
+    if verification_status:
+        v_str = verification_status.strip().lower()
+        records = [r for r in records if (r.get("verification_status") or "").lower() == v_str]
+
+    if answer_source:
+        ans_src = answer_source.strip().lower()
+        records = [r for r in records if (r.get("answer_source") or "").lower() == ans_src]
+
+    total = len(records)
+    total_pages = max(1, (total + page_size - 1) // page_size) if total > 0 else 1
+
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_records = records[start_idx:end_idx]
+
+    prov_dict = dataset.provenance.to_dict()
+
+    return CleanedDatasetPaginatedResponse(
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        items=[CleanedDatasetItem(**rec) for rec in page_records],
+        provenance=CleanedDatasetProvenance(**prov_dict),
+        filters_available=dataset.filters_available,
+    )
+
+
+@router.get(
+    "/cleaned-dataset/provenance",
+    response_model=CleanedDatasetProvenance,
+    summary="Get cryptographic provenance and metadata for the cleaned dataset",
+)
+def get_cleaned_dataset_provenance_endpoint(
+    current_user: User = Depends(require_role("professor")),
+) -> CleanedDatasetProvenance:
+    """Returns cryptographic hash, row counts, and schema validation details."""
+    try:
+        dataset = load_cleaned_dataset()
+    except FileNotFoundError as fnf_err:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Cleaned dataset file could not be found: {fnf_err}",
+        )
+    return CleanedDatasetProvenance(**dataset.provenance.to_dict())
 
 
 @router.get(

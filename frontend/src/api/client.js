@@ -235,4 +235,14 @@ export const getLearningReadinessStats = async () => {
   return response.data;
 };
 
+export const getCleanedDataset = async (params = {}) => {
+  const response = await apiClient.get('/question-bank/cleaned-dataset', { params });
+  return response.data;
+};
+
+export const getCleanedDatasetProvenance = async () => {
+  const response = await apiClient.get('/question-bank/cleaned-dataset/provenance');
+  return response.data;
+};
+
 export default apiClient;
