@@ -9,6 +9,7 @@ import {
   BookOpen,
   BarChart3,
   Award,
+  Target,
   LogOut,
   Menu,
   X,
@@ -55,6 +56,7 @@ const Layout = () => {
   const studentNav = [
     { name: 'الرئيسية', path: '/student/dashboard', icon: LayoutDashboard },
     { name: 'الامتحانات المتاحة', path: '/student/exams', icon: BookOpen },
+    { name: 'تحسين مستواي', path: '/student/improvement', icon: Target },
     { name: 'نتائجي', path: '/student/results', icon: Award },
   ];
 

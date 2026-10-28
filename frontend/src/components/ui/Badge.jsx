@@ -69,11 +69,21 @@ const Badge = ({
       default:
         colorClasses = 'bg-sand text-cocoa-500 border-cocoa-300/50';
     }
-  } else if (type === 'cluster' || normalized.includes('intervention') || normalized.includes('proficient') || normalized.includes('advanced')) {
+  } else if (
+    type === 'cluster' ||
+    normalized.includes('intervention') ||
+    normalized.includes('support') ||
+    normalized.includes('proficient') ||
+    normalized.includes('intermediate') ||
+    normalized.includes('advanced') ||
+    normalized.includes('evaluation')
+  ) {
     if (normalized.includes('advanced')) {
-      colorClasses = 'bg-clay-100 text-clay-800 border-clay-200';
-    } else if (normalized.includes('proficient')) {
-      colorClasses = 'bg-teal-50 text-teal-700 border-teal-200';
+      colorClasses = 'bg-purple-50 text-purple-700 border-purple-200';
+    } else if (normalized.includes('intermediate') || normalized.includes('proficient')) {
+      colorClasses = 'bg-sky-50 text-sky-700 border-sky-200';
+    } else if (normalized.includes('evaluation')) {
+      colorClasses = 'bg-cocoa-100 text-cocoa-700 border-cocoa-200';
     } else {
       colorClasses = 'bg-rose-50 text-rose-700 border-rose-200';
     }
@@ -128,10 +138,15 @@ const Badge = ({
   };
 
   const clusterLabels = {
-    advanced: 'متقدمين',
-    proficient: 'متمكنين',
-    needs_intervention: 'محتاجين متابعة',
-    at_risk: 'محتاجين متابعة',
+    advanced: 'متقدم',
+    proficient: 'متمكن',
+    intermediate: 'متوسط',
+    needs_support: 'يحتاج دعم',
+    support: 'يحتاج دعم',
+    needs_intervention: 'يحتاج متابعة',
+    intervention: 'يحتاج متابعة',
+    at_risk: 'يحتاج متابعة',
+    under_evaluation: 'قيد التقييم',
   };
 
   let displayText = rawChildStr;
@@ -142,7 +157,8 @@ const Badge = ({
   } else if (bloomLabels[normalized] && (type === 'bloom' || !type)) {
     displayText = bloomLabels[normalized];
   } else if (type === 'cluster') {
-    const key = Object.keys(clusterLabels).find((k) => normalized.includes(k));
+    const slug = normalized.replace(/[\s-]+/g, '_');
+    const key = Object.keys(clusterLabels).find((k) => slug.includes(k) || normalized.includes(k));
     displayText = key ? clusterLabels[key] : rawChildStr;
   }
 

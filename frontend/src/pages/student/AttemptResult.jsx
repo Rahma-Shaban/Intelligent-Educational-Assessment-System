@@ -20,6 +20,7 @@ import {
   FileText,
   ThumbsUp,
   AlertTriangle,
+  Target,
 } from 'lucide-react';
 
 const AttemptResult = () => {
@@ -375,7 +376,15 @@ const AttemptResult = () => {
         )}
       </div>
 
-      <div className="flex justify-end gap-3 pt-4">
+      <div className="flex justify-end gap-3 pt-4 flex-wrap">
+        {/* Student Improvement shortcut: practice the same lesson again */}
+        {attempt?.lesson_id && (
+          <Link to={`/student/improvement?lesson=${encodeURIComponent(attempt.lesson_id)}`}>
+            <Button variant="outline" icon={Target}>
+              تدرب على هذا الدرس
+            </Button>
+          </Link>
+        )}
         <Link to="/student/dashboard">
           <Button variant="secondary">الرئيسية</Button>
         </Link>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { getStudentDashboard, getMyAttempts } from '../../api/client';
+import { getStudentDashboard, getMyAttempts, getImprovement } from '../../api/client';
 import ProfessorPicker from '../../components/ProfessorPicker';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -25,6 +25,7 @@ const StudentDashboard = () => {
   const { user } = useAuth();
   const [dashboardData, setDashboardData] = useState(null);
   const [attempts, setAttempts] = useState([]);
+  const [weakestLesson, setWeakestLesson] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -34,9 +35,10 @@ const StudentDashboard = () => {
       setError('');
       try {
         const studentId = user?.id || user?._id || user?.user_id;
-        const [dashRes, attemptsRes] = await Promise.allSettled([
+        const [dashRes, attemptsRes, impRes] = await Promise.allSettled([
           getStudentDashboard(studentId),
           getMyAttempts(),
+          getImprovement(),
         ]);
 
         if (dashRes.status === 'fulfilled') {
@@ -49,6 +51,11 @@ const StudentDashboard = () => {
           setAttempts(Array.isArray(attemptsRes.value) ? attemptsRes.value : attemptsRes.value?.attempts || []);
         } else {
           console.warn('Student attempts fetch failed:', attemptsRes.reason);
+        }
+
+        if (impRes.status === 'fulfilled' && impRes.value?.lessons?.length > 0) {
+          const weak = impRes.value.lessons.find((l) => l.status === 'weak' || l.status === 'developing') || impRes.value.lessons[0];
+          setWeakestLesson(weak);
         }
       } catch (err) {
         console.error('Error loading student dashboard:', err);
@@ -127,6 +134,49 @@ const StudentDashboard = () => {
 
       {/* Professor selection — persisted on the account, exams are scoped to it */}
       <ProfessorPicker />
+
+      {/* Student Improvement Banner / CTA */}
+      <Card className="bg-gradient-to-l from-clay-900 to-cocoa-950 text-white p-5 border-gold-500/30 shadow-warm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="p-1 rounded bg-gold-400 text-clay-950">
+                <Target className="w-4 h-4" />
+              </span>
+              <h3 className="font-bold text-sm md:text-base text-gold-300">
+                تحسين مستوى الطالب والتدريب الموجه
+              </h3>
+            </div>
+            {weakestLesson ? (
+              <p className="text-xs text-sand/90 leading-relaxed" dir="auto">
+                التركيز المقترح: <strong>الدرس {weakestLesson.lesson_id} — {weakestLesson.lesson_title}</strong>{' '}
+                (نسبة الدقة: {weakestLesson.accuracy_pct}%، أخطأت في {weakestLesson.questions_wrong} أسئلة).
+              </p>
+            ) : (
+              <p className="text-xs text-sand/80">
+                حلل أخطاء امتحاناتك السابقة، واكتشف الدروس التي تحتاج إلى تحسين، وتدرب على أسئلة مخصصة لمستواك.
+              </p>
+            )}
+          </div>
+          <Link
+            to={
+              weakestLesson
+                ? `/student/improvement?lesson=${encodeURIComponent(weakestLesson.lesson_id)}`
+                : '/student/improvement'
+            }
+            className="shrink-0"
+          >
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Target}
+              className="bg-gold-400 text-clay-950 hover:bg-gold-300 border-none font-bold"
+            >
+              {weakestLesson ? 'تدرب على الدرس' : 'تحسين مستواي'}
+            </Button>
+          </Link>
+        </div>
+      </Card>
 
       {/* Top 3 Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">

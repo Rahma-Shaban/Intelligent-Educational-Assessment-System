@@ -7,6 +7,7 @@ const Button = ({
   variant = 'primary',
   size = 'md',
   loading = false,
+  loadingText = 'جاري التحميل...',
   disabled = false,
   className = '',
   onClick,
@@ -41,7 +42,7 @@ const Button = ({
       {loading ? (
         <>
           <Loader2 className="w-4 h-4 animate-spin" />
-          <span>Loading...</span>
+          <span>{loadingText}</span>
         </>
       ) : (
         <>

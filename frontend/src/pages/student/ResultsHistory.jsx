@@ -154,6 +154,11 @@ const ResultsHistory = () => {
                       >
                         {passed ? 'ناجح 🎉' : 'محتاج مراجعة'}
                       </span>
+                      {att.is_practice && (
+                        <Badge variant="info" size="sm">
+                          تدريب
+                        </Badge>
+                      )}
                       {att.cluster && (
                         <Badge type="cluster" size="sm">
                           {att.cluster}

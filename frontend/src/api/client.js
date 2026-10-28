@@ -127,6 +127,13 @@ export const updateExamQuestion = async (examId, questionIndex, payload) => {
   return response.data;
 };
 
+export const createPracticeExam = async (payload) => {
+  const response = await apiClient.post('/exams/practice', payload, {
+    timeout: 120000,
+  });
+  return response.data;
+};
+
 // Attempts endpoints
 export const startAttempt = async (examId) => {
   const response = await apiClient.post('/attempts/start', { exam_id: examId });
@@ -162,6 +169,12 @@ export const getStudentDashboard = async (studentId) => {
 
 export const getProfessorDashboard = async () => {
   const response = await apiClient.get('/analytics/dashboard/professor');
+  return response.data;
+};
+
+export const getImprovement = async (studentId) => {
+  const path = studentId ? `/analytics/improvement?student_id=${studentId}` : '/analytics/improvement';
+  const response = await apiClient.get(path);
   return response.data;
 };
 

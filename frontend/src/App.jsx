@@ -24,6 +24,7 @@ import StudentExamList from './pages/student/ExamList';
 import TakeExam from './pages/student/TakeExam';
 import AttemptResult from './pages/student/AttemptResult';
 import ResultsHistory from './pages/student/ResultsHistory';
+import Improvement from './pages/student/Improvement';
 
 // Redirect root based on user authentication and role
 const HomeRedirect = () => {
@@ -90,6 +91,7 @@ function App() {
             <Route path="exam/:id" element={<TakeExam />} />
             <Route path="attempt/:id" element={<AttemptResult />} />
             <Route path="results" element={<ResultsHistory />} />
+            <Route path="improvement" element={<Improvement />} />
           </Route>
 
           {/* Root and Fallback Routes */}
