@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import ChatBot from './ChatBot';
 import {
   LayoutDashboard,
   FileUp,
@@ -213,6 +214,9 @@ const Layout = () => {
         <main className="flex-1 p-4 md:p-8 max-w-7xl w-full mx-auto">
           <Outlet />
         </main>
+
+        {/* Floating Chatbot for Students */}
+        <ChatBot />
       </div>
     </div>
   );

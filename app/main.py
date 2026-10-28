@@ -13,6 +13,7 @@ from app.routers import (
     analytics_router,
     attempt_router,
     auth_router,
+    chatbot_router,
     curriculum_router,
     exam_router,
 )
@@ -47,6 +48,7 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     """Initialize SQLite database tables and ensure schema migrations."""
+    chatbot_router.warmup_vectorstore_async()
     Base.metadata.create_all(bind=engine)
     migrations = [
         ("exams", "is_published", "ALTER TABLE exams ADD COLUMN is_published BOOLEAN DEFAULT 0"),
@@ -85,6 +87,7 @@ app.include_router(curriculum_router.router, prefix="/api/curriculum")
 app.include_router(exam_router.router, prefix="/api/exams")
 app.include_router(attempt_router.router, prefix="/api/attempts")
 app.include_router(analytics_router.router, prefix="/api/analytics")
+app.include_router(chatbot_router.router, prefix="/api/chatbot")
 
 
 @app.get(

@@ -4,6 +4,7 @@ const API_BASE_URL = '/api';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -161,6 +162,15 @@ export const getStudentDashboard = async (studentId) => {
 
 export const getProfessorDashboard = async () => {
   const response = await apiClient.get('/analytics/dashboard/professor');
+  return response.data;
+};
+
+// Chatbot endpoint with configurable options (e.g. timeout, abort signal)
+export const sendChatMessage = async (data, config = {}) => {
+  const response = await apiClient.post('/chatbot/message', data, {
+    timeout: 30000,
+    ...config,
+  });
   return response.data;
 };
 
