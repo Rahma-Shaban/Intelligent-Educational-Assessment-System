@@ -30,6 +30,7 @@ flowchart LR
 | 3 | Semantic Grading | Deterministic MCQ verification + LLM rubric-based criterion grading for open-ended answers with partial credit, strengths, and weaknesses | Implemented |
 | 4 | Student Analytics | Unsupervised KMeans clustering (`outputs/student_cluster_pipeline.pkl`) grouping students into "Needs Intervention", "Proficient", and "Advanced" | Implemented |
 | 5 | Feedback & Dashboards | Complete FastAPI REST API (`app/`) paired with modern React + Vite frontend (`frontend/`) featuring student and professor portals | Implemented |
+| 6 | RAG Evaluation & Observability | Evaluates curriculum RAG with Ragas (4 metrics) and traces retrieval/generation execution paths in LangSmith | Implemented |
 
 ## Project Structure
 
@@ -45,10 +46,13 @@ flowchart LR
 │   └── src/components/   # Reusable UI component library (Card, Badge, Button, Alert)
 ├── data/
 │   ├── raw/              # Curriculum textbook PDFs
-│   └── processed/        # Chroma DB store (240 chunks across 14 ML lessons)
-├── outputs/              # Benchmark comparisons, generated exams, trained model pickle
-├── scripts/              # Reusable core modules (config, ingestion, generation, grading, analytics, feedback)
-├── tests/                # Comprehensive unit and integration test suite
+│   ├── processed/        # Chroma DB store (240 chunks across 14 ML lessons)
+│   └── evaluation/       # Evaluation dataset (rag_test_set.json)
+├── notebooks/            # Educational workflows (01_ingestion, 02_generation ... 06_rag_evaluation)
+├── outputs/              # Benchmark comparisons, generated exams, evaluation results
+│   └── evaluation/       # ragas_results.csv, ragas_summary.json, run_manifest.jsonl, plots
+├── scripts/              # Core modules (config, ingestion, generation, grading, analytics, evaluation)
+├── tests/                # Unit and integration test suite (including test_evaluation.py)
 ├── .env.example          # Environment configuration template
 ├── requirements.txt      # Python dependencies
 └── README.md
@@ -113,3 +117,69 @@ Retrain the unsupervised clustering model:
 ```bash
 python scripts/train_clusters.py
 ```
+
+---
+
+## 6. RAG Evaluation & Observability (Ragas + LangSmith)
+
+Module 6 provides ground-truth curriculum evaluation and production observability.
+
+### Purpose
+- **Evaluates the actual RAG pipeline** against 30 expert-curated curriculum test cases in `data/evaluation/rag_test_set.json`.
+- **Measures 4 core Ragas metrics**:
+  1. **Context Precision**: Signal-to-noise ratio of retrieved chunks (did relevant chunks place at the top ranks?).
+  2. **Context Recall**: Ground-truth coverage (did retrieved chunks contain all facts from the reference answer?).
+  3. **Faithfulness**: Hallucination check (are claims in the generated response grounded in context?).
+  4. **Answer Relevancy**: Query alignment (does the generated answer address the original question directly?).
+- **Instruments full-stack tracing via LangSmith**: Captures hierarchical execution runs (`curriculum_retrieval` $\rightarrow$ `curriculum_generation` $\rightarrow$ `curriculum_rag_pipeline`), latencies, chunk IDs, and run IDs.
+
+### Configuration (`.env`)
+Add the following optional LangSmith variables:
+```env
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your_langsmith_api_key_here
+LANGSMITH_PROJECT=educational-assessment
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+```
+*Note: If `LANGSMITH_TRACING=false` is set or API keys are missing, tracing is automatically disabled and the RAG pipeline continues operating normally without interruption.*
+
+### Dataset Schema (`data/evaluation/rag_test_set.json`)
+The dataset contains 30 curriculum questions with:
+- `id`: Question identifier (e.g. `q01`).
+- `question`: User query.
+- `reference_answer`: Ground truth factual reference.
+- `source_chapter`, `source_page`: Curriculum textbook source location.
+- `question_type`, `expected_chunk_content`, `answerability`.
+
+### Running Evaluation
+
+1. **Run Unit Tests (Offline, No External API Calls Required):**
+```bash
+python -m unittest tests.test_evaluation -v
+```
+
+2. **Open the Evaluation Notebook:**
+```bash
+jupyter notebook notebooks/06_rag_evaluation.ipynb
+# or: notebooks/0_6rag_evaluation.ipynb
+```
+
+3. **Smoke Test vs Full Evaluation:**
+- In Section C of the notebook, `RUN_FULL_EVALUATION = False` runs a quick 3-question smoke test.
+- Change `RUN_FULL_EVALUATION = True` to evaluate the entire 30-question dataset.
+
+4. **Saved Artifacts (`outputs/evaluation/`):**
+- `ragas_results.csv`: Per-question results table with latencies, chunk counts, and all 4 metric scores.
+- `ragas_summary.json`: Aggregate metrics summary (mean scores, valid denominators, execution timestamp).
+- `ragas_results.json`: Complete detailed records with per-case status.
+- `run_manifest.jsonl`: Sanitized trace run log with trace URLs.
+- `ragas_metrics_plot.png`: Aggregate metrics comparison bar chart and latency breakdown plot.
+
+### Inspecting LangSmith Traces
+1. Log in to [LangSmith](https://smith.langchain.com).
+2. Select the `educational-assessment` project.
+3. Inspect parent runs (`curriculum_rag_pipeline`) and drill down into child retrieval (`curriculum_retrieval`) and generation (`curriculum_generation`) steps to view latency waterfalls, chunk metadata, and token usage.
+
+### Privacy & Security
+- API keys and tokens are never printed or logged in notebook cells or output files.
+- Traces and evaluation artifacts contain curriculum text and educational questions only; no student personally identifiable information (PII) is processed or sent externally.
