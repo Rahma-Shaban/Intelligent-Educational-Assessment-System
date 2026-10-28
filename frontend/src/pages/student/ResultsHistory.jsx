@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { getMyAttempts } from '../../api/client';
+
+import { formatCompletionTime } from '../professor/examStudentResults';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -121,13 +123,7 @@ const ResultsHistory = () => {
             const passed = pct >= 60;
 
             const dateStr = att.submitted_at
-              ? new Date(att.submitted_at).toLocaleDateString('ar-EG', {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })
+              ? formatCompletionTime(att.submitted_at)
               : 'حديثاً';
 
             return (

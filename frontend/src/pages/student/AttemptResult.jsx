@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import { getAttempt } from '../../api/client';
+
+import { formatCompletionTime, formatAttemptDuration } from '../professor/examStudentResults';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -122,9 +124,9 @@ const AttemptResult = () => {
             <p className="text-sm text-white/70">
               اتسلّم في{' '}
               {attempt.submitted_at
-                ? new Date(attempt.submitted_at).toLocaleString('ar-EG')
+                ? formatCompletionTime(attempt.submitted_at)
                 : 'دلوقتي'}{' '}
-              &bull; الوقت المستغرق: {attempt.duration_seconds ? `${Math.round(attempt.duration_seconds / 60)} دقيقة` : 'مكتمل'}
+              &bull; الوقت المستغرق: {attempt.duration_seconds ? formatAttemptDuration(attempt.duration_seconds) : 'مكتمل'}
             </p>
           </div>
 

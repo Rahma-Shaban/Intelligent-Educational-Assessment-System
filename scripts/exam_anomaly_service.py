@@ -3,6 +3,8 @@ Exam Anomaly Detection Service (Inference Layer).
 Loads the trained pipeline artifact and inspects submitted exam attempts.
 """
 
+import logging
+import sys
 from pathlib import Path
 from typing import Any, Dict
 import joblib
@@ -54,6 +56,10 @@ class ExamFeatureEngineer(BaseEstimator, TransformerMixin):
         return features.values
 
 
+if "__main__" in sys.modules and not hasattr(sys.modules["__main__"], "ExamFeatureEngineer"):
+    setattr(sys.modules["__main__"], "ExamFeatureEngineer", ExamFeatureEngineer)
+
+
 # ---------------------------------------------------------------------
 # كلاس خدمة فحص المحاولات
 # ---------------------------------------------------------------------
@@ -71,8 +77,11 @@ class ExamAnomalyService:
                 f"لم يتم العثور على ملف النموذج في: {model_path}"
             )
 
+        main_mod = sys.modules.get("__main__")
+        if main_mod is not None and not hasattr(main_mod, "ExamFeatureEngineer"):
+            setattr(main_mod, "ExamFeatureEngineer", ExamFeatureEngineer)
         self.pipeline = joblib.load(model_path)
-        print(f"تم تحميل الموديل بنجاح من: {model_path}")
+        logging.getLogger(__name__).info("Exam anomaly pipeline loaded from: %s", model_path)
 
     def inspect_attempt(
         self,
@@ -110,7 +119,11 @@ class ExamAnomalyService:
             total_q = max(mcq_count + essay_count, 1)
             sec_per_q = duration_seconds / total_q
 
-            if essay_count > 0 and (duration_seconds / total_q) < 15.0:
+            # استبعاد الإنذارات الخاطئة: قضاء وقت طبيعي مع درجات غير مرتفعة ليس اشتباهاً بغش
+            if sec_per_q >= 15.0 and score_percentage <= 80.0:
+                is_anomaly = False
+                flag_reason = "محاولة طبيعية متناسقة"
+            elif essay_count > 0 and (duration_seconds / total_q) < 15.0:
                 flag_reason = "سرعة حل غير واقعية لأسئلة مقالية (اشتباه قوي)"
             elif sec_per_q < 5.0 and score_percentage < 40.0:
                 flag_reason = "تخمين عشوائي وسريع بدون قراءة الأسئلة"

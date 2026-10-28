@@ -114,6 +114,11 @@ export const getExam = async (id) => {
   return response.data;
 };
 
+export const getExamStudentResults = async (examId) => {
+  const response = await apiClient.get(`/exams/${examId}/results`);
+  return response.data;
+};
+
 export const togglePublishExam = async (id, isPublished = true) => {
   const response = await apiClient.patch(`/exams/${id}/publish`, { is_published: isPublished });
   return response.data;

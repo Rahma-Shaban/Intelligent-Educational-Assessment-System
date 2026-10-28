@@ -11,6 +11,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.anomaly import (
+    compute_score_percentage,
+    count_exam_question_types,
+    resolve_attempt_duration_seconds,
+    screen_exam_attempt,
+)
 from app.auth import get_current_user, require_role
 from app.database import get_db
 from app.models import Exam, ExamAttempt, StudentCluster, User
@@ -26,7 +32,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Attempts"])
 
 
-def _format_attempt_response(attempt: ExamAttempt) -> AttemptResponse:
+def _format_attempt_response(
+    attempt: ExamAttempt,
+    *,
+    include_anomaly: bool = False,
+) -> AttemptResponse:
     """Helper to convert ExamAttempt ORM object to AttemptResponse schema."""
     percentage = None
     if attempt.total_score is not None and attempt.max_possible_score:
@@ -46,21 +56,42 @@ def _format_attempt_response(attempt: ExamAttempt) -> AttemptResponse:
     is_practice = bool(attempt.exam.is_practice) if attempt.exam else False
     lesson_id = attempt.exam.lesson_id if attempt.exam else None
 
-    return AttemptResponse(
-        id=attempt.id,
-        exam_id=attempt.exam_id,
-        student_id=attempt.student_id,
-        started_at=attempt.started_at,
-        submitted_at=attempt.submitted_at,
-        duration_seconds=attempt.duration_seconds,
-        total_score=attempt.total_score,
-        max_possible_score=attempt.max_possible_score,
-        percentage=percentage,
-        graded_answers=graded_answers,
-        exam_title=exam_title,
-        is_practice=is_practice,
-        lesson_id=lesson_id,
+    sub_at = (
+        attempt.submitted_at.replace(tzinfo=timezone.utc)
+        if attempt.submitted_at is not None and attempt.submitted_at.tzinfo is None
+        else attempt.submitted_at
     )
+    start_at = (
+        attempt.started_at.replace(tzinfo=timezone.utc)
+        if attempt.started_at is not None and attempt.started_at.tzinfo is None
+        else attempt.started_at
+    )
+
+    payload: dict[str, Any] = {
+        "id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "student_id": attempt.student_id,
+        "started_at": start_at,
+        "submitted_at": sub_at,
+        "duration_seconds": attempt.duration_seconds,
+        "total_score": attempt.total_score,
+        "max_possible_score": attempt.max_possible_score,
+        "percentage": percentage,
+        "graded_answers": graded_answers,
+        "exam_title": exam_title,
+        "is_practice": is_practice,
+        "lesson_id": lesson_id,
+    }
+    if include_anomaly:
+        payload.update(
+            {
+                "is_suspicious": bool(getattr(attempt, "is_suspicious", False)),
+                "suspicion_status": getattr(attempt, "suspicion_status", None),
+                "suspicion_reason": getattr(attempt, "suspicion_reason", None),
+                "anomaly_score": getattr(attempt, "anomaly_score", None),
+            }
+        )
+    return AttemptResponse(**payload)
 
 
 @router.post(
@@ -190,9 +221,11 @@ def submit_attempt(
         )
 
     now = datetime.now(timezone.utc)
-    duration = payload.duration_seconds
-    if duration <= 0 and attempt.started_at:
-        duration = int((now - attempt.started_at).total_seconds())
+    duration = resolve_attempt_duration_seconds(
+        attempt.started_at,
+        now,
+        payload.duration_seconds,
+    )
 
     # Execute automated grading pipeline
     try:
@@ -206,11 +239,27 @@ def submit_attempt(
             detail=f"Automated grading failed: {exc}",
         )
 
+    mcq_count, essay_count = count_exam_question_types(exam_dict)
+    score_pct = compute_score_percentage(
+        graded_result["total_score"],
+        graded_result["max_possible_score"],
+    )
+    screening = screen_exam_attempt(
+        mcq_count=mcq_count,
+        essay_count=essay_count,
+        duration_seconds=float(duration),
+        score_percentage=score_pct,
+    )
+
     attempt.submitted_at = now
     attempt.duration_seconds = max(0, duration)
     attempt.total_score = graded_result["total_score"]
     attempt.max_possible_score = graded_result["max_possible_score"]
     attempt.graded_answers_json = json.dumps(graded_result["graded_answers"])
+    attempt.is_suspicious = bool(screening["is_suspicious"])
+    attempt.suspicion_status = screening["suspicion_status"]
+    attempt.suspicion_reason = screening["suspicion_reason"]
+    attempt.anomaly_score = screening["anomaly_score"]
 
     db.commit()
     db.refresh(attempt)
@@ -323,4 +372,7 @@ def get_attempt_by_id(
             detail="Forbidden: students are not permitted to inspect other students' attempts.",
         )
 
-    return _format_attempt_response(attempt)
+    return _format_attempt_response(
+        attempt,
+        include_anomaly=current_user.role == "professor",
+    )

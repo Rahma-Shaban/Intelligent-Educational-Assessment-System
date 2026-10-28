@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getExam, togglePublishExam, updateExamQuestion } from '../../api/client';
-import { Send, Globe } from 'lucide-react';
+import { getExam, getExamStudentResults, togglePublishExam, updateExamQuestion } from '../../api/client';
+import {
+  ANOMALY_REVIEW_NOTE,
+  EXAM_RESULTS_EMPTY_MESSAGE,
+  buildStudentResultRows,
+  countDistinctSubmittedStudents,
+  examResultsErrorMessage,
+} from './examStudentResults';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -22,6 +28,13 @@ import {
   X,
   Plus,
   Trash2,
+  Users,
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  Send,
+  Globe,
 } from 'lucide-react';
 
 const DIFFICULTY_OPTIONS = ['easy', 'medium', 'hard'];
@@ -372,6 +385,167 @@ const QuestionEditor = ({ examId, index, question, onSaved, onCancel }) => {
   );
 };
 
+const anomalyBadgeClass = (kind) => {
+  if (kind === 'flagged') return 'bg-gold-100 text-gold-800 border-gold-300';
+  if (kind === 'normal') return 'bg-teal-50 text-teal-800 border-teal-200';
+  return 'bg-sand text-cocoa-600 border-cocoa-300/50';
+};
+
+const ExamStudentResultsPanel = ({ examId }) => {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [rows, setRows] = useState([]);
+  const [distinctStudentCount, setDistinctStudentCount] = useState(0);
+  const [expandedId, setExpandedId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadResults = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const data = await getExamStudentResults(examId);
+        if (!cancelled) {
+          setRows(buildStudentResultRows(data));
+          setDistinctStudentCount(countDistinctSubmittedStudents(data));
+        }
+      } catch (err) {
+        console.error('Failed to load exam student results:', err);
+        if (!cancelled) {
+          setError(examResultsErrorMessage(err));
+          setRows([]);
+          setDistinctStudentCount(0);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+    if (examId) {
+      loadResults();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [examId]);
+
+  return (
+    <Card className="p-6 space-y-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-xl font-extrabold text-ink flex items-center gap-2">
+            <Users className="w-5 h-5 text-clay-600" />
+            نتائج الطلاب
+          </h2>
+          <p className="text-xs text-cocoa-500 mt-1 max-w-2xl">{ANOMALY_REVIEW_NOTE}</p>
+        </div>
+        {!loading && !error && (
+          <div
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-sand/60 border border-sand text-xs font-bold text-cocoa-800"
+            data-testid="distinct-submitted-students-summary"
+          >
+            <span>عدد الطلاب الذين سلّموا:</span>
+            <span className="text-sm font-extrabold text-clay-700 font-mono">
+              {distinctStudentCount}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {loading && <LoadingSpinner size="md" message="جاري تحميل نتائج التسليم..." />}
+
+      {!loading && error && (
+        <Alert type="error" title="تعذر تحميل النتائج" message={error} />
+      )}
+
+      {!loading && !error && rows.length === 0 && (
+        <p className="text-sm text-cocoa-500 text-center py-6">{EXAM_RESULTS_EMPTY_MESSAGE}</p>
+      )}
+
+      {!loading && !error && rows.length > 0 && (
+        <div className="space-y-2">
+          {rows.map((student) => {
+            const expanded = expandedId === student.studentId;
+            return (
+              <div key={student.studentId} className="border border-sand rounded-2xl overflow-hidden bg-paper">
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-between gap-3 px-4 py-3 text-right hover:bg-cream/70 transition-colors"
+                  onClick={() =>
+                    setExpandedId(expanded ? null : student.studentId)
+                  }
+                  aria-expanded={expanded}
+                >
+                  <div>
+                    <p className="text-sm font-extrabold text-ink" dir="auto">
+                      {student.name}
+                    </p>
+                    <p className="text-xs text-cocoa-500 mt-0.5">
+                      عدد المحاولات المسلّمة: {student.submittedAttemptCount}
+                    </p>
+                  </div>
+                  {expanded ? (
+                    <ChevronUp className="w-4 h-4 text-cocoa-400 shrink-0" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-cocoa-400 shrink-0" />
+                  )}
+                </button>
+                {expanded && (
+                  <div className="border-t border-sand px-4 py-3 space-y-3 bg-cream/40">
+                    {student.attempts.map((attempt) => (
+                      <div
+                        key={attempt.attemptId}
+                        className="rounded-xl border border-sand bg-paper p-3 space-y-2 text-xs"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-bold text-cocoa-800" dir="ltr">
+                            Attempt #{attempt.attemptId}
+                          </span>
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border font-bold ${anomalyBadgeClass(attempt.anomaly.kind)}`}
+                          >
+                            {attempt.anomaly.kind === 'flagged' && (
+                              <AlertTriangle className="w-3 h-3" />
+                            )}
+                            {attempt.anomaly.label}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-cocoa-600">
+                          <p>
+                            <span className="font-bold text-cocoa-800">الدرجة: </span>
+                            {attempt.score ?? '—'}
+                            {attempt.maxPossibleScore != null ? ` / ${attempt.maxPossibleScore}` : ''}
+                            {attempt.scorePercentage != null ? ` (${attempt.scorePercentage}%)` : ''}
+                          </p>
+                          <p>
+                            <span className="font-bold text-cocoa-800">وقت التسليم: </span>
+                            {attempt.completionLabel}
+                          </p>
+                          <p className="flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-clay-500" />
+                            <span className="font-bold text-cocoa-800">المدة: </span>
+                            {attempt.durationLabel}
+                          </p>
+                        </div>
+                        {attempt.anomaly.reason && (
+                          <p className="text-cocoa-700 bg-gold-50/70 border border-gold-200 rounded-lg p-2" dir="auto">
+                            {attempt.anomaly.reason}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+};
+
 const ExamDetail = () => {
   const { id } = useParams();
   const [exam, setExam] = useState(null);
@@ -522,6 +696,8 @@ const ExamDetail = () => {
           </div>
         </div>
       </Card>
+
+      <ExamStudentResultsPanel examId={id} />
 
       {/* Questions list */}
       <div className="space-y-6">

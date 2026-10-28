@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from sqlalchemy import inspect, text
+from sqlalchemy.engine import Engine
+
+from app.anomaly import init_exam_anomaly_service
 from app.database import Base, engine
 from app.routers import (
     analytics_router,
@@ -20,6 +24,72 @@ from app.routers import (
 )
 from scripts.config import LLM_PROVIDER
 from scripts.generation import validate_configuration
+
+logger = logging.getLogger(__name__)
+
+SCHEMA_MIGRATIONS: list[tuple[str, str, str]] = [
+    ("exams", "is_published", "ALTER TABLE exams ADD COLUMN is_published BOOLEAN DEFAULT 0"),
+    ("exams", "is_practice", "ALTER TABLE exams ADD COLUMN is_practice BOOLEAN NOT NULL DEFAULT 0"),
+    (
+        "exams",
+        "practice_for_student_id",
+        "ALTER TABLE exams ADD COLUMN practice_for_student_id INTEGER REFERENCES users(id)",
+    ),
+    (
+        "curriculums",
+        "professor_id",
+        "ALTER TABLE curriculums ADD COLUMN professor_id INTEGER REFERENCES users(id)",
+    ),
+    (
+        "curriculums",
+        "collection_name",
+        "ALTER TABLE curriculums ADD COLUMN collection_name VARCHAR(255)",
+    ),
+    (
+        "users",
+        "selected_professor_id",
+        "ALTER TABLE users ADD COLUMN selected_professor_id INTEGER REFERENCES users(id)",
+    ),
+    (
+        "exam_attempts",
+        "is_suspicious",
+        "ALTER TABLE exam_attempts ADD COLUMN is_suspicious BOOLEAN NOT NULL DEFAULT 0",
+    ),
+    (
+        "exam_attempts",
+        "suspicion_status",
+        "ALTER TABLE exam_attempts ADD COLUMN suspicion_status VARCHAR(100)",
+    ),
+    (
+        "exam_attempts",
+        "suspicion_reason",
+        "ALTER TABLE exam_attempts ADD COLUMN suspicion_reason TEXT",
+    ),
+    (
+        "exam_attempts",
+        "anomaly_score",
+        "ALTER TABLE exam_attempts ADD COLUMN anomaly_score FLOAT",
+    ),
+]
+
+
+def apply_schema_migrations(bind: Engine | None = None) -> list[str]:
+    """Add missing columns on existing SQLite databases. create_all does not alter tables."""
+    target = bind or engine
+    applied: list[str] = []
+    with target.connect() as conn:
+        inspector = inspect(target)
+        tables = set(inspector.get_table_names())
+        for table, column, ddl in SCHEMA_MIGRATIONS:
+            if table not in tables:
+                continue
+            cols = [c["name"] for c in inspector.get_columns(table)]
+            if column not in cols:
+                conn.execute(text(ddl))
+                conn.commit()
+                applied.append(f"{table}.{column}")
+                inspector.clear_cache()
+    return applied
 
 app = FastAPI(
     title="Intelligent Educational Assessment System API",
@@ -48,44 +118,17 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Initialize SQLite database tables and ensure schema migrations."""
+    """Initialize SQLite database tables, schema migrations, and screening model."""
     chatbot_router.warmup_vectorstore_async()
     Base.metadata.create_all(bind=engine)
-    migrations = [
-        ("exams", "is_published", "ALTER TABLE exams ADD COLUMN is_published BOOLEAN DEFAULT 0"),
-        ("exams", "is_practice", "ALTER TABLE exams ADD COLUMN is_practice BOOLEAN NOT NULL DEFAULT 0"),
-        (
-            "exams",
-            "practice_for_student_id",
-            "ALTER TABLE exams ADD COLUMN practice_for_student_id INTEGER REFERENCES users(id)",
-        ),
-        (
-            "curriculums",
-            "professor_id",
-            "ALTER TABLE curriculums ADD COLUMN professor_id INTEGER REFERENCES users(id)",
-        ),
-        (
-            "curriculums",
-            "collection_name",
-            "ALTER TABLE curriculums ADD COLUMN collection_name VARCHAR(255)",
-        ),
-        (
-            "users",
-            "selected_professor_id",
-            "ALTER TABLE users ADD COLUMN selected_professor_id INTEGER REFERENCES users(id)",
-        ),
-    ]
     try:
-        with engine.connect() as conn:
-            inspector = inspect(engine)
-            for table, column, ddl in migrations:
-                if table in inspector.get_table_names():
-                    cols = [c["name"] for c in inspector.get_columns(table)]
-                    if column not in cols:
-                        conn.execute(text(ddl))
-                        conn.commit()
+        applied = apply_schema_migrations(engine)
+        if applied:
+            logger.info("Applied database schema migrations: %s", ", ".join(applied))
     except Exception:
-        pass
+        logger.exception("Database schema migration failed.")
+        raise
+    init_exam_anomaly_service()
 
 
 # Mount feature routers with designated API prefixes
