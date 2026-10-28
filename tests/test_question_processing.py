@@ -98,6 +98,10 @@ class QuestionParsingTests(unittest.TestCase):
                 temp_path.unlink()
 
     def test_parse_excel_file(self):
+        try:
+            import openpyxl  # noqa: F401
+        except ImportError:
+            self.skipTest("openpyxl is not installed in this environment")
         df = pd.DataFrame([
             {
                 "question_id": "MCQ-001",

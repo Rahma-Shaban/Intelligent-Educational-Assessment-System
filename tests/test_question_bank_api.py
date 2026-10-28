@@ -37,7 +37,6 @@ def override_get_db():
         db.close()
 
 
-app.dependency_overrides[get_db] = override_get_db
 Base.metadata.create_all(bind=test_engine)
 
 
@@ -72,6 +71,10 @@ class TestQuestionBankAPI(unittest.TestCase):
 
         cls.prof_token = create_access_token({"sub": "1", "role": "professor"})
         cls.student_token = create_access_token({"sub": "2", "role": "student"})
+
+    @classmethod
+    def tearDownClass(cls):
+        app.dependency_overrides.pop(get_db, None)
 
     def setUp(self):
         app.dependency_overrides[get_db] = override_get_db

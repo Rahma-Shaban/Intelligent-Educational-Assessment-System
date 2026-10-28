@@ -217,6 +217,9 @@ def build_analysis_prompt(
             f"  {opt_letters[i]}: {opt}" for i, opt in enumerate(options[:4])
         )
 
+    options_block = f"- Options:\n{formatted_options}" if formatted_options else ""
+    correct_opt_block = f"- Correct Option Key: {correct_opt}" if correct_opt else ""
+
     return f"""
 You are an expert psychometrician and curriculum assessment analyst.
 Analyze the following educational question rigorously and output a structured JSON evaluation.
@@ -228,8 +231,8 @@ Analyze the following educational question rigorously and output a structured JS
 Question Specification:
 - Question Type: {q_type}
 - Question Text: {q_text}
-{f"- Options:\n{formatted_options}" if formatted_options else ""}
-{f"- Correct Option Key: {correct_opt}" if correct_opt else ""}
+{options_block}
+{correct_opt_block}
 - Correct / Model Answer: {correct_ans}
 
 Available Curriculum Metadata / Context:
