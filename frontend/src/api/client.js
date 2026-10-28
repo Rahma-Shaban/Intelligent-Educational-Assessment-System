@@ -4,6 +4,7 @@ const API_BASE_URL = '/api';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -164,7 +165,6 @@ export const getProfessorDashboard = async () => {
   return response.data;
 };
 
-
 // Question Bank endpoints
 export const getQuestionBank = async (params = {}) => {
   const response = await apiClient.get('/question-bank', { params });
@@ -184,6 +184,14 @@ export const getQuestionBankItem = async (id) => {
 export const importQuestionBank = async (formData) => {
   const response = await apiClient.post('/question-bank/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+// Chatbot endpoint with configurable options (e.g. timeout, abort signal)
+export const sendChatMessage = async (data, config = {}) => {
+  const response = await apiClient.post('/chatbot/message', data, {
+    timeout: 30000,
+    ...config,
   });
   return response.data;
 };
