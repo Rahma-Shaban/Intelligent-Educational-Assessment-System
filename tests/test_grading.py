@@ -171,6 +171,7 @@ class GradingModuleTests(unittest.TestCase):
 
     def test_grade_exam_submission_full_workflow(self):
         exam = {
+            "lesson_id": "1-1",
             "total_points": 4.0,
             "questions": [
                 {
@@ -213,6 +214,8 @@ class GradingModuleTests(unittest.TestCase):
         self.assertEqual(submission_result["percentage"], 100.0)
         self.assertEqual(len(submission_result["graded_answers"]), 2)
         self.assertTrue(submission_result["graded_answers"][0]["is_correct"])
+        self.assertEqual(submission_result["graded_answers"][0]["lesson_id"], "1-1")
+        self.assertEqual(submission_result["graded_answers"][1]["lesson_id"], "1-1")
         self.assertEqual(submission_result["graded_answers"][1]["score"], 3.0)
 
 
