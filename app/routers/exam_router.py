@@ -12,15 +12,25 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_role
 from app.database import get_db
+from app.improvement_service import (
+    get_lesson_diagnosis,
+    get_student_level,
+    real_exam_filter,
+    resolve_practice_source,
+)
 from app.models import Curriculum, Exam, User
 from app.schemas import (
     ExamGenerateRequest,
     ExamListItem,
     ExamPublishRequest,
     ExamResponse,
+    PracticeExamRequest,
     QuestionUpdateRequest,
 )
 from scripts.generation import _validate_question, generate_exam
+from scripts.improvement import build_practice_topic, suggest_practice_settings
+
+ALLOWED_PRACTICE_TYPES = {"mcq", "short_answer", "essay"}
 
 router = APIRouter(tags=["Exams"])
 
@@ -69,6 +79,7 @@ def _build_exam_response(
         total_points=exam.total_points,
         question_count=len(questions),
         is_published=exam.is_published,
+        is_practice=bool(exam.is_practice),
         created_at=exam.created_at,
         curriculum_id=exam.curriculum_id,
         questions=questions,
@@ -76,10 +87,23 @@ def _build_exam_response(
     )
 
 
+def _ensure_practice_owner(exam: Exam, user: User) -> None:
+    """Only the student a practice exam was generated for may open it."""
+    if exam.is_practice and exam.practice_for_student_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This practice exam belongs to another student.",
+        )
+
+
 def _ensure_student_visible(exam: Exam, student: User) -> None:
     """
     Students may only access published exams from the professor they selected.
     """
+    # Practice exams belong to exactly one student, not to a professor
+    if exam.is_practice:
+        _ensure_practice_owner(exam, student)
+        return
     if not exam.is_published:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -341,7 +365,8 @@ def list_exams(
     else:
         query = select(Exam).where(Exam.created_by == current_user.id)
 
-    query = query.order_by(Exam.created_at.desc())
+    # Personal practice exams never appear in exam lists (students or professors)
+    query = query.where(real_exam_filter()).order_by(Exam.created_at.desc())
     exams = db.scalars(query).all()
     results: list[ExamListItem] = []
     for ex in exams:
@@ -357,6 +382,7 @@ def list_exams(
                 total_points=ex.total_points,
                 question_count=len(raw_questions),
                 is_published=ex.is_published,
+                is_practice=bool(ex.is_practice),
                 created_at=ex.created_at,
                 curriculum_id=ex.curriculum_id,
             )
@@ -385,6 +411,8 @@ def get_exam_by_id(
             detail=f"Exam with ID {exam_id} not found.",
         )
 
+    _ensure_practice_owner(exam, current_user)
+
     if current_user.role == "student":
         _ensure_student_visible(exam, current_user)
 
@@ -396,3 +424,114 @@ def get_exam_by_id(
     )
 
     return _build_exam_response(exam, questions, warnings)
+
+
+@router.post(
+    "/practice",
+    response_model=ExamResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate a personalized practice exam for a lesson (Student only)",
+)
+def create_practice_exam(
+    payload: PracticeExamRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("student")),
+) -> ExamResponse:
+    """
+    Generates a personalized practice assessment targeted at the student's weaknesses
+    in a specific curriculum lesson.
+    """
+    lesson_id = payload.lesson_id.strip()
+
+    source = resolve_practice_source(db, current_user, lesson_id, verify_with_store=True)
+    if not source["available"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=source["reason"] or f"Curriculum lesson '{lesson_id}' is not available for practice.",
+        )
+
+    lessons, _, _ = get_lesson_diagnosis(db, current_user)
+    lesson_diag = next((l for l in lessons if l["lesson_id"] == lesson_id), None)
+
+    accuracy_pct = (
+        lesson_diag["accuracy_pct"]
+        if lesson_diag and lesson_diag["status"] != "not_enough_data"
+        else None
+    )
+    level_label = get_student_level(db, current_user.id)
+    settings = suggest_practice_settings(accuracy_pct, level_label)
+
+    q_types = settings["question_types"]
+    if payload.question_types:
+        cleaned_types = [
+            str(t).strip().lower()
+            for t in payload.question_types
+            if str(t).strip().lower() in ALLOWED_PRACTICE_TYPES
+        ]
+        if cleaned_types:
+            q_types = cleaned_types
+
+    num_questions = payload.number_of_questions or settings["number_of_questions"]
+
+    wrong_questions = lesson_diag["sample_wrong_questions"] if lesson_diag else []
+    lesson_title = source["lesson_title"] or (
+        lesson_diag["lesson_title"] if lesson_diag else f"Lesson {lesson_id}"
+    )
+    topic = build_practice_topic(lesson_title, wrong_questions)
+
+    curriculum_obj = source["curriculum"]
+    collection_name = source["collection_name"]
+    language = source.get("language") or "en"
+
+    try:
+        exam_dict, _ = generate_exam(
+            topic=topic,
+            lesson_id=lesson_id,
+            difficulty=settings["difficulty"],
+            bloom_level=settings["bloom_level"],
+            question_types=q_types,
+            number_of_questions=num_questions,
+            allow_partial=True,
+            language=language,
+            collection_name=collection_name,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Practice exam generation failed: {exc}",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error during practice generation: {exc}",
+        )
+
+    questions = exam_dict.get("questions", [])
+    total_pts = float(
+        exam_dict.get("total_points", sum(q.get("max_score", 1.0) for q in questions))
+    )
+    title = f"Practice: {lesson_title}"
+
+    exam_record = Exam(
+        title=title,
+        curriculum_id=curriculum_obj.id if curriculum_obj else None,
+        lesson_id=lesson_id,
+        topic=topic,
+        difficulty=settings["difficulty"],
+        bloom_level=settings["bloom_level"],
+        exam_json=json.dumps(exam_dict),
+        total_points=total_pts,
+        is_published=True,
+        is_practice=True,
+        practice_for_student_id=current_user.id,
+        created_by=current_user.id,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(exam_record)
+    db.commit()
+    db.refresh(exam_record)
+
+    sanitized_questions = _sanitize_for_student(questions)
+    return _build_exam_response(
+        exam_record, sanitized_questions, exam_dict.get("warnings", [])
+    )

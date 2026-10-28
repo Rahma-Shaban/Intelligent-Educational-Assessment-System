@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_role
@@ -43,6 +43,8 @@ def _format_attempt_response(attempt: ExamAttempt) -> AttemptResponse:
             graded_answers = None
 
     exam_title = attempt.exam.title if attempt.exam else None
+    is_practice = bool(attempt.exam.is_practice) if attempt.exam else False
+    lesson_id = attempt.exam.lesson_id if attempt.exam else None
 
     return AttemptResponse(
         id=attempt.id,
@@ -56,6 +58,8 @@ def _format_attempt_response(attempt: ExamAttempt) -> AttemptResponse:
         percentage=percentage,
         graded_answers=graded_answers,
         exam_title=exam_title,
+        is_practice=is_practice,
+        lesson_id=lesson_id,
     )
 
 
@@ -86,17 +90,24 @@ def start_attempt(
             detail="Cannot start an attempt on an unpublished exam.",
         )
 
-    # Students may only attempt exams published by their selected professor
-    if current_user.selected_professor_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Select a professor first before starting an exam.",
-        )
-    if exam.created_by != current_user.selected_professor_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This exam belongs to a professor other than your selected professor.",
-        )
+    if exam.is_practice:
+        if exam.practice_for_student_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: this practice exam was created for another student.",
+            )
+    else:
+        # Students may only attempt exams published by their selected professor
+        if current_user.selected_professor_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Select a professor first before starting an exam.",
+            )
+        if exam.created_by != current_user.selected_professor_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This exam belongs to a professor other than your selected professor.",
+            )
 
     attempt = ExamAttempt(
         exam_id=payload.exam_id,
@@ -153,12 +164,22 @@ def submit_attempt(
             detail="Associated exam record could not be found.",
         )
 
-    # Re-assert professor scoping at submission time
-    if current_user.selected_professor_id is None or exam.created_by != current_user.selected_professor_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This exam belongs to a professor other than your selected professor.",
-        )
+    # Re-assert scoping at submission time
+    if exam.is_practice:
+        if exam.practice_for_student_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: this practice exam was created for another student.",
+            )
+    else:
+        if (
+            current_user.selected_professor_id is None
+            or exam.created_by != current_user.selected_professor_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This exam belongs to a professor other than your selected professor.",
+            )
 
     try:
         exam_dict = json.loads(exam.exam_json)
@@ -195,56 +216,61 @@ def submit_attempt(
     db.refresh(attempt)
 
     # Real-time student profiling using trained StudentAnalyticsEngine
-    try:
-        from scripts.analytics import StudentAnalyticsEngine
-        import numpy as np
+    # (Exclude practice attempts from student proficiency profiling)
+    if not exam.is_practice:
+        try:
+            from scripts.analytics import StudentAnalyticsEngine
+            import numpy as np
 
-        all_student_attempts = db.scalars(
-            select(ExamAttempt).where(
-                ExamAttempt.student_id == current_user.id,
-                ExamAttempt.submitted_at.is_not(None),
-            )
-        ).all()
-
-        scores = [
-            float(att.total_score / att.max_possible_score * 100.0)
-            for att in all_student_attempts
-            if att.max_possible_score and att.max_possible_score > 0 and att.total_score is not None
-        ]
-
-        if scores:
-            engine = StudentAnalyticsEngine()
-            pred = engine.predict_student(scores)
-            c_label = pred.get("student_level", "Under Evaluation")
-
-            features_dict = {
-                "avg_percentage": round(float(np.mean(scores)), 2),
-                "max_percentage": round(float(np.max(scores)), 2),
-                "min_percentage": round(float(np.min(scores)), 2),
-                "exams_taken": len(scores),
-                "std_percentage": round(float(np.std(scores, ddof=1)), 2) if len(scores) > 1 else 0.0,
-                "level_code": pred.get("level_code", -1),
-            }
-
-            cluster_rec = db.scalar(
-                select(StudentCluster).where(StudentCluster.student_id == current_user.id)
-            )
-            now_cluster = datetime.now(timezone.utc)
-            if cluster_rec:
-                cluster_rec.cluster_label = c_label
-                cluster_rec.features_json = json.dumps(features_dict)
-                cluster_rec.updated_at = now_cluster
-            else:
-                new_cluster_rec = StudentCluster(
-                    student_id=current_user.id,
-                    cluster_label=c_label,
-                    features_json=json.dumps(features_dict),
-                    updated_at=now_cluster,
+            all_student_attempts = db.execute(
+                select(ExamAttempt)
+                .join(Exam, ExamAttempt.exam_id == Exam.id)
+                .where(
+                    ExamAttempt.student_id == current_user.id,
+                    ExamAttempt.submitted_at.is_not(None),
+                    or_(Exam.is_practice == False, Exam.is_practice.is_(None)),  # noqa: E712
                 )
-                db.add(new_cluster_rec)
-            db.commit()
-    except Exception as exc:
-        logger.warning("Could not update student proficiency profile: %s", exc)
+            ).scalars().all()
+
+            scores = [
+                float(att.total_score / att.max_possible_score * 100.0)
+                for att in all_student_attempts
+                if att.max_possible_score and att.max_possible_score > 0 and att.total_score is not None
+            ]
+
+            if scores:
+                engine = StudentAnalyticsEngine()
+                pred = engine.predict_student(scores)
+                c_label = pred.get("student_level", "Under Evaluation")
+
+                features_dict = {
+                    "avg_percentage": round(float(np.mean(scores)), 2),
+                    "max_percentage": round(float(np.max(scores)), 2),
+                    "min_percentage": round(float(np.min(scores)), 2),
+                    "exams_taken": len(scores),
+                    "std_percentage": round(float(np.std(scores, ddof=1)), 2) if len(scores) > 1 else 0.0,
+                    "level_code": pred.get("level_code", -1),
+                }
+
+                cluster_rec = db.scalar(
+                    select(StudentCluster).where(StudentCluster.student_id == current_user.id)
+                )
+                now_cluster = datetime.now(timezone.utc)
+                if cluster_rec:
+                    cluster_rec.cluster_label = c_label
+                    cluster_rec.features_json = json.dumps(features_dict)
+                    cluster_rec.updated_at = now_cluster
+                else:
+                    new_cluster_rec = StudentCluster(
+                        student_id=current_user.id,
+                        cluster_label=c_label,
+                        features_json=json.dumps(features_dict),
+                        updated_at=now_cluster,
+                    )
+                    db.add(new_cluster_rec)
+                db.commit()
+        except Exception as exc:
+            logger.warning("Could not update student proficiency profile: %s", exc)
 
     return _format_attempt_response(attempt)
 

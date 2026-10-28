@@ -7,15 +7,17 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_role
 from app.database import get_db
-from app.models import ExamAttempt, StudentCluster, User
+from app.improvement_service import build_improvement_payload, real_exam_filter
+from app.models import Exam, ExamAttempt, StudentCluster, User
 from app.routers.attempt_router import _format_attempt_response
 from app.schemas import (
     ClusterResponse,
+    ImprovementResponse,
     ProfessorDashboardResponse,
     StudentDashboardResponse,
     UserResponse,
@@ -42,9 +44,14 @@ def compute_clustering(
     Extracts student performance feature vectors, executes unsupervised clustering,
     and updates student profile classifications in the database.
     """
-    attempts = db.scalars(
-        select(ExamAttempt).where(ExamAttempt.submitted_at.is_not(None))
-    ).all()
+    attempts = db.execute(
+        select(ExamAttempt)
+        .join(Exam, ExamAttempt.exam_id == Exam.id)
+        .where(
+            ExamAttempt.submitted_at.is_not(None),
+            real_exam_filter(),
+        )
+    ).scalars().all()
 
     if not attempts:
         return []
@@ -143,7 +150,7 @@ def _build_student_dashboard(
             detail=f"Student with ID {student_id} not found.",
         )
 
-    attempts = db.scalars(
+    all_attempts = db.scalars(
         select(ExamAttempt)
         .where(
             ExamAttempt.student_id == student_id,
@@ -151,6 +158,12 @@ def _build_student_dashboard(
         )
         .order_by(ExamAttempt.started_at.desc())
     ).all()
+
+    # Feedback and dynamic cluster calculations reflect real exams only
+    real_attempts = [
+        att for att in all_attempts
+        if not (att.exam and att.exam.is_practice)
+    ]
 
     cluster_record = db.scalar(
         select(StudentCluster).where(StudentCluster.student_id == student_id)
@@ -174,7 +187,7 @@ def _build_student_dashboard(
         )
 
     attempts_dicts: list[dict[str, Any]] = []
-    for att in attempts:
+    for att in real_attempts:
         max_s = float(att.max_possible_score) if att.max_possible_score else 0.0
         tot_s = float(att.total_score) if att.total_score is not None else 0.0
         pct = (tot_s / max_s * 100.0) if max_s > 0 else 0.0
@@ -228,7 +241,7 @@ def _build_student_dashboard(
 
     return StudentDashboardResponse(
         student=UserResponse.model_validate(student_user),
-        attempts=[_format_attempt_response(a) for a in attempts],
+        attempts=[_format_attempt_response(a) for a in all_attempts],
         cluster=cluster_response,
         feedback=feedback,
     )
@@ -285,9 +298,14 @@ def get_professor_dashboard(
     Computes class-wide distribution, topic masteries, student clusters,
     and automated instructional interventions.
     """
-    all_attempts = db.scalars(
-        select(ExamAttempt).where(ExamAttempt.submitted_at.is_not(None))
-    ).all()
+    all_attempts = db.execute(
+        select(ExamAttempt)
+        .join(Exam, ExamAttempt.exam_id == Exam.id)
+        .where(
+            ExamAttempt.submitted_at.is_not(None),
+            real_exam_filter(),
+        )
+    ).scalars().all()
 
     attempts_data: list[dict[str, Any]] = []
     for att in all_attempts:
@@ -349,3 +367,37 @@ def get_professor_dashboard(
         clusters=cluster_list,
         summary=summary,
     )
+
+
+@router.get(
+    "/improvement",
+    response_model=ImprovementResponse,
+    summary="Get lesson improvement diagnosis and practice history",
+)
+def get_improvement(
+    student_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ImprovementResponse:
+    """
+    Analyzes past graded attempts per lesson, identifies weak lessons,
+    suggests practice settings, and tracks practice performance over time.
+    Students see their own data; professors may view any student via ?student_id=.
+    """
+    if current_user.role == "student":
+        target_student = current_user
+    else:
+        if student_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Professors must provide student_id to inspect improvement.",
+            )
+        target_student = db.scalar(select(User).where(User.id == student_id))
+        if not target_student or target_student.role != "student":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Student with ID {student_id} not found.",
+            )
+
+    payload = build_improvement_payload(db, target_student)
+    return ImprovementResponse(**payload)
