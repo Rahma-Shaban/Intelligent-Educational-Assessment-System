@@ -342,7 +342,6 @@ class ProfessorDashboardResponse(BaseModel):
     summary: dict[str, Any]
 
 
-
 # ==============================================================================
 # Student Improvement Schemas
 # ==============================================================================
@@ -416,7 +415,6 @@ class PracticeExamRequest(BaseModel):
         default=None,
         description="Optional override; allowed: 'mcq', 'short_answer', 'essay'",
     )
-
 
 # ==============================================================================
 # Question Bank Schemas
@@ -577,7 +575,7 @@ class QuestionClassificationResponse(BaseModel):
     question_type: str
     options: list[str] = Field(default_factory=list)
     correct_option: str | None = None
-    correct_answer: str
+    correct_answer: str | None = None
     explanation: str | None = None
     subject: str | None = None
     unit: str | None = None
@@ -595,6 +593,28 @@ class QuestionClassificationResponse(BaseModel):
     review_reasons: list[str] = Field(default_factory=list)
     supporting_chunks: list[dict[str, Any]] = Field(default_factory=list)
     persisted_item: QuestionBankItemResponse | None = None
+
+class QuestionPracticeSubmitRequest(BaseModel):
+    """Payload for student submitting a practice answer."""
+    selected_option: str | None = None
+    answer_text: str | None = None
+
+
+class QuestionPracticeGradingResponse(BaseModel):
+    """Authoritative evaluation of student practice answer."""
+    question_id: str
+    question_type: str
+    is_correct: bool | None = None
+    score: float = 0.0
+    max_score: float = 1.0
+    status: str
+    submitted_answer: str | None = None
+    selected_option: str | None = None
+    correct_option: str | None = None
+    correct_answer: str | None = None
+    explanation: str | None = None
+    feedback_message: str
+    requires_teacher_review: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -656,3 +676,5 @@ class CleanedDatasetPaginatedResponse(BaseModel):
     items: list[CleanedDatasetItem]
     provenance: CleanedDatasetProvenance
     filters_available: dict[str, list[str]] = Field(default_factory=dict)
+
+

@@ -289,3 +289,22 @@ class QuestionBankItem(Base):
         nullable=False,
     )
     imported_from: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+class QuestionBankPracticeSubmission(Base):
+    """Persisted student self-practice submission and authoritative grading record."""
+
+    __tablename__ = "question_bank_practice_submissions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
+    question_id: Mapped[str] = mapped_column(String(100), ForeignKey("question_bank_items.question_id", ondelete="CASCADE"), index=True, nullable=False)
+    student_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    selected_option: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    submitted_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="graded")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )

@@ -397,6 +397,7 @@ def _call_chatbot_llm(messages: list[dict[str, str]], temperature: float = 0.3) 
         )
 
     import httpx
+    from scripts.generation import _build_ssl_context
 
     base_url = (GROQ_BASE_URL or "https://api.groq.com/openai/v1").rstrip("/")
     headers = {
@@ -411,7 +412,7 @@ def _call_chatbot_llm(messages: list[dict[str, str]], temperature: float = 0.3) 
     }
 
     try:
-        with httpx.Client(timeout=20.0) as client:
+        with httpx.Client(timeout=20.0, verify=_build_ssl_context()) as client:
             response = client.post(
                 f"{base_url}/chat/completions",
                 headers=headers,

@@ -183,7 +183,6 @@ export const getImprovement = async (studentId) => {
   return response.data;
 };
 
-
 // Question Bank endpoints
 export const getQuestionBank = async (params = {}) => {
   const response = await apiClient.get('/question-bank', { params });
@@ -247,6 +246,11 @@ export const getCleanedDataset = async (params = {}) => {
 
 export const getCleanedDatasetProvenance = async () => {
   const response = await apiClient.get('/question-bank/cleaned-dataset/provenance');
+  return response.data;
+};
+
+export const submitQuestionBankPractice = async (questionId, payload) => {
+  const response = await apiClient.post(`/question-bank/${questionId}/submit`, payload);
   return response.data;
 };
 
