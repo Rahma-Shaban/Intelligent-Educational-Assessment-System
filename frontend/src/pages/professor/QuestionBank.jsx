@@ -339,40 +339,51 @@ const QuestionBank = () => {
       setModalError('يرجى إدخال نص السؤال أولاً.');
       return;
     }
+    let derivedOpt = manualQuestion.correct_option;
+    let derivedAns = manualQuestion.correct_answer.trim();
+
     if (manualQuestion.question_type === 'mcq') {
       const filledOptions = (manualQuestion.options || []).map((o) => o.trim()).filter(Boolean);
       if (filledOptions.length !== 4) {
         setModalError('سؤال الاختيار من متعدد يتطلب إدخال 4 خيارات إجابة كاملة.');
         return;
       }
-      if (!manualQuestion.correct_option) {
-        setModalError('يرجى تحديد الخيار الصحيح (A, B, C, أو D) صراحة بالنقر على الحرف المناسب.');
-        return;
+      // If correct option wasn't explicitly clicked, see if correct_answer matches an option
+      if (!derivedOpt && derivedAns) {
+        const found = filledOptions.findIndex(o => o.toLowerCase() === derivedAns.toLowerCase());
+        if (found >= 0) {
+          derivedOpt = ['A', 'B', 'C', 'D'][found];
+        }
       }
-    } else {
-      if (!manualQuestion.correct_answer.trim()) {
-        setModalError('يرجى إدخال الإجابة النموذجية للسؤال قبل التحليل.');
-        return;
+      // If correct option was clicked, sync answer text
+      if (derivedOpt && !derivedAns) {
+        const optIdx = ['A', 'B', 'C', 'D'].indexOf(derivedOpt);
+        if (optIdx >= 0 && manualQuestion.options[optIdx]) {
+          derivedAns = manualQuestion.options[optIdx].trim();
+        }
       }
     }
     setClassifying(true);
     try {
-      const optIdx = ['A', 'B', 'C', 'D'].indexOf(manualQuestion.correct_option);
       const payload = {
         question_text: manualQuestion.question_text.trim(),
         question_type: manualQuestion.question_type,
         options: manualQuestion.question_type === 'mcq' ? manualQuestion.options.map((o) => o.trim()) : [],
-        correct_option: manualQuestion.question_type === 'mcq' ? manualQuestion.correct_option : null,
-        correct_answer: manualQuestion.question_type === 'mcq'
-          ? (optIdx >= 0 ? manualQuestion.options[optIdx]?.trim() : manualQuestion.correct_answer.trim())
-          : manualQuestion.correct_answer.trim(),
+        correct_option: manualQuestion.question_type === 'mcq' ? (derivedOpt || null) : null,
+        correct_answer: derivedAns,
         explanation: manualQuestion.explanation ? manualQuestion.explanation.trim() : null,
         persist: false,
       };
       const res = await classifyQuestion(payload);
       setPreviewClassification(res);
     } catch (err) {
-      setModalError(err?.response?.data?.detail || 'فشل التحليل والتصنيف التلقائي للسؤال.');
+      const detail = err?.response?.data?.detail;
+      const msg = typeof detail === 'string'
+        ? detail
+        : Array.isArray(detail)
+        ? detail.map((d) => d.msg || d.detail || JSON.stringify(d)).join(', ')
+        : 'فشل التحليل والتصنيف التلقائي للسؤال.';
+      setModalError(msg);
     } finally {
       setClassifying(false);
     }

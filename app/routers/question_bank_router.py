@@ -16,11 +16,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from starlette import status as http_status
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_role
 from app.database import get_db
-from app.models import Curriculum, QuestionBankItem, User
+from app.models import Curriculum, QuestionBankItem, QuestionBankPracticeSubmission, User
 from app.schemas import (
     CleanedDatasetItem,
     CleanedDatasetPaginatedResponse,
@@ -33,6 +34,8 @@ from app.schemas import (
     QuestionBankStatsResponse,
     QuestionClassificationRequest,
     QuestionClassificationResponse,
+    QuestionPracticeSubmitRequest,
+    QuestionPracticeGradingResponse,
 )
 from scripts.config import VECTOR_DB_PATH
 from scripts.question_bank_service import (
@@ -215,7 +218,7 @@ def classify_question(
     if request.question_type == "mcq":
         if len(options) != 4 or not all(str(o).strip() for o in options):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="MCQ requires exactly 4 non-empty options.",
             )
         if not correct_opt or str(correct_opt).strip().upper() not in ("A", "B", "C", "D"):
@@ -230,18 +233,18 @@ def classify_question(
                 correct_ans = options[found_idx]
             else:
                 raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="MCQ requires an explicitly selected correct option ('A', 'B', 'C', or 'D').",
                 )
         else:
             correct_opt = str(correct_opt).strip().upper()
             idx = ["A", "B", "C", "D"].index(correct_opt)
-            if not correct_ans:
+            if not correct_ans and idx < len(options):
                 correct_ans = str(options[idx]).strip()
     else:
         if not correct_ans:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"{request.question_type.replace('_', ' ').title()} question requires a model/correct answer.",
             )
 
@@ -348,16 +351,27 @@ def list_question_bank_items(
     page: int = Query(1, ge=1, description="Page index (1-based)"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("professor")),
+    current_user: User = Depends(get_current_user),
 ) -> QuestionBankPaginatedResponse:
     """
     Returns paginated question bank items matching the criteria.
-    Only authorized professors can view pending review records and correct answers.
+    Professors can query all questions with full evaluation and answer metadata.
+    Students receive only approved questions for practice, with answers and evaluation notes redacted.
     """
+    if current_user.role == "student":
+        effective_status = "approved"
+    elif current_user.role == "professor":
+        effective_status = status
+    else:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: role not authorized to access question bank",
+        )
+
     res = query_question_bank_paginated(
         db=db,
         search=search,
-        status=status,
+        status=effective_status,
         difficulty=difficulty,
         bloom_level=bloom_level,
         curriculum_id=curriculum_id,
@@ -367,12 +381,22 @@ def list_question_bank_items(
         page=page,
         page_size=page_size,
     )
+    items = res["items"]
+    if current_user.role == "student":
+        for it in items:
+            it["correct_answer"] = ""
+            it["correct_option"] = None
+            it["explanation"] = None
+            it["review_notes"] = None
+            it["teacher_corrections"] = None
+            it["review_reasons"] = []
+
     return QuestionBankPaginatedResponse(
         total=res["total"],
         page=res["page"],
         page_size=res["page_size"],
         total_pages=res["total_pages"],
-        items=[QuestionBankItemResponse(**it) for it in res["items"]],
+        items=[QuestionBankItemResponse(**it) for it in items],
     )
 
 
@@ -438,13 +462,13 @@ def get_cleaned_dataset_endpoint(
         dataset = load_cleaned_dataset()
     except FileNotFoundError as fnf_err:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail=f"Cleaned dataset file could not be found: {fnf_err}",
         )
     except Exception as exc:
         logger.error("Error loading cleaned dataset: %s", exc)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to load cleaned dataset: {exc}",
         )
 
@@ -513,7 +537,7 @@ def get_cleaned_dataset_provenance_endpoint(
         dataset = load_cleaned_dataset()
     except FileNotFoundError as fnf_err:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status.HTTP_404_NOT_FOUND,
             detail=f"Cleaned dataset file could not be found: {fnf_err}",
         )
     return CleanedDatasetProvenance(**dataset.provenance.to_dict())
@@ -681,3 +705,205 @@ def reconcile_embeddings_endpoint(
         statuses=("pending", "failed"),
     )
     return result
+
+
+@router.post(
+    "/{question_id}/submit",
+    response_model=QuestionPracticeGradingResponse,
+    summary="Submit and authoritatively grade student practice answer",
+)
+@router.post(
+    "/{question_id}/practice",
+    response_model=QuestionPracticeGradingResponse,
+    summary="Practice question grading alias",
+)
+def grade_practice_question(
+    question_id: str,
+    payload: QuestionPracticeSubmitRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> QuestionPracticeGradingResponse:
+    """
+    Authoritative backend grading for student practice in the Question Bank:
+    - Verifies question is approved for student access.
+    - Deterministically grades MCQs against the verified answer key.
+    - Protects answer secrecy prior to submission; reveals correct answer & explanation upon submission.
+    - Handles missing answer keys safely.
+    - For essay and short-answer questions, records submission and confirms teacher review without false 'correct' grading.
+    - Persists the practice record in the database.
+    """
+    from sqlalchemy import select
+    from scripts.grading import grade_mcq
+
+    item = db.scalar(
+        select(QuestionBankItem).where(QuestionBankItem.question_id == question_id)
+    )
+    if not item and question_id.isdigit():
+        item = db.scalar(
+            select(QuestionBankItem).where(QuestionBankItem.id == int(question_id))
+        )
+    if not item:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail=f"Question with ID '{question_id}' not found in Question Bank.",
+        )
+
+    if current_user.role == "student" and item.review_status != "approved":
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: question is not approved for student practice.",
+        )
+
+    options: list[str] = []
+    if item.options_json:
+        try:
+            options = json.loads(item.options_json) or []
+        except Exception:
+            options = []
+
+    submitted_text = (payload.answer_text or "").strip()
+    selected_opt = (payload.selected_option or "").strip()
+
+    # Normalize selected_option and submitted_text
+    if selected_opt.isdigit() and 0 <= int(selected_opt) < len(options):
+        opt_idx = int(selected_opt)
+        selected_opt = ["A", "B", "C", "D"][opt_idx]
+        if not submitted_text:
+            submitted_text = str(options[opt_idx]).strip()
+    elif selected_opt.upper() in ("A", "B", "C", "D"):
+        selected_opt = selected_opt.upper()
+        idx = ["A", "B", "C", "D"].index(selected_opt)
+        if not submitted_text and idx < len(options):
+            submitted_text = str(options[idx]).strip()
+    elif not selected_opt and submitted_text and options:
+        for i, opt in enumerate(options):
+            if str(opt).strip().casefold() == submitted_text.casefold():
+                selected_opt = ["A", "B", "C", "D"][i]
+                break
+
+    if item.question_type == "mcq":
+        canonical_correct_opt = (item.correct_option or "").strip().upper()
+        canonical_correct_ans = (item.correct_answer or "").strip()
+
+        if not canonical_correct_opt and canonical_correct_ans and options:
+            for idx, opt in enumerate(options):
+                if str(opt).strip().casefold() == canonical_correct_ans.casefold():
+                    canonical_correct_opt = ["A", "B", "C", "D"][idx]
+                    break
+
+        if not canonical_correct_ans and canonical_correct_opt and options:
+            if canonical_correct_opt in ("A", "B", "C", "D"):
+                idx = ["A", "B", "C", "D"].index(canonical_correct_opt)
+                if idx < len(options):
+                    canonical_correct_ans = str(options[idx]).strip()
+
+        # Missing answer key safety check
+        if not canonical_correct_opt and not canonical_correct_ans:
+            sub = QuestionBankPracticeSubmission(
+                question_id=item.question_id,
+                student_id=current_user.id,
+                selected_option=selected_opt or None,
+                submitted_answer=submitted_text or None,
+                is_correct=None,
+                score=0.0,
+                status="unverified_key",
+            )
+            db.add(sub)
+            db.commit()
+
+            return QuestionPracticeGradingResponse(
+                question_id=item.question_id,
+                question_type="mcq",
+                is_correct=None,
+                score=0.0,
+                max_score=1.0,
+                status="unverified_key",
+                submitted_answer=submitted_text or selected_opt,
+                selected_option=selected_opt or None,
+                correct_option=None,
+                correct_answer=None,
+                explanation=item.explanation,
+                feedback_message="تعذر التحقق التلقائي لعدم توفر مفتاح الإجابة الصحيحة لهذا السؤال في النظام. تم تحويل السؤال لمراجعة المعلم.",
+                requires_teacher_review=True,
+            )
+
+        eval_student = selected_opt if selected_opt else submitted_text
+        eval_target = canonical_correct_opt if canonical_correct_opt else canonical_correct_ans
+        mcq_eval = grade_mcq(student_answer=eval_student, correct_answer=eval_target, max_score=1.0)
+        is_corr = bool(mcq_eval.get("is_correct"))
+
+        if not is_corr and submitted_text and canonical_correct_ans:
+            if submitted_text.casefold() == canonical_correct_ans.casefold():
+                is_corr = True
+
+        score = 1.0 if is_corr else 0.0
+        status_str = "correct" if is_corr else "incorrect"
+        feedback = (
+            "إجابة صحيحة! أحسنت."
+            if is_corr
+            else f"إجابة غير صحيحة. الخيار الصحيح هو ({canonical_correct_opt or canonical_correct_ans})."
+        )
+
+        sub = QuestionBankPracticeSubmission(
+            question_id=item.question_id,
+            student_id=current_user.id,
+            selected_option=selected_opt or None,
+            submitted_answer=submitted_text or None,
+            is_correct=is_corr,
+            score=score,
+            status=status_str,
+        )
+        db.add(sub)
+        db.commit()
+
+        revealed_answer = canonical_correct_ans or (
+            options[["A", "B", "C", "D"].index(canonical_correct_opt)]
+            if canonical_correct_opt in ("A", "B", "C", "D") and ["A", "B", "C", "D"].index(canonical_correct_opt) < len(options)
+            else None
+        )
+
+        return QuestionPracticeGradingResponse(
+            question_id=item.question_id,
+            question_type="mcq",
+            is_correct=is_corr,
+            score=score,
+            max_score=1.0,
+            status=status_str,
+            submitted_answer=submitted_text or selected_opt,
+            selected_option=selected_opt or None,
+            correct_option=canonical_correct_opt or None,
+            correct_answer=revealed_answer,
+            explanation=item.explanation,
+            feedback_message=feedback,
+            requires_teacher_review=False,
+        )
+    else:
+        # Essay and short-answer questions require teacher review
+        sub = QuestionBankPracticeSubmission(
+            question_id=item.question_id,
+            student_id=current_user.id,
+            selected_option=None,
+            submitted_answer=submitted_text or None,
+            is_correct=None,
+            score=0.0,
+            status="needs_teacher_review",
+        )
+        db.add(sub)
+        db.commit()
+
+        return QuestionPracticeGradingResponse(
+            question_id=item.question_id,
+            question_type=item.question_type,
+            is_correct=None,
+            score=0.0,
+            max_score=1.0,
+            status="needs_teacher_review",
+            submitted_answer=submitted_text,
+            selected_option=None,
+            correct_option=None,
+            correct_answer=item.correct_answer or None,
+            explanation=item.explanation,
+            feedback_message="تم تسجيل إجابتك وإرسالها لمراجعة المعلم بنجاح. لا يتم التصحيح التلقائي للأسئلة المقالية، وتظهر أدناه الإجابة النموذجية المرجعية.",
+            requires_teacher_review=True,
+        )
+

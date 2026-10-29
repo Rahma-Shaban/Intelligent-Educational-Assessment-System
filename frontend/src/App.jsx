@@ -22,6 +22,7 @@ import QuestionBank from './pages/professor/QuestionBank';
 // Student pages
 import StudentDashboard from './pages/student/Dashboard';
 import StudentExamList from './pages/student/ExamList';
+import StudentQuestionBank from './pages/student/QuestionBank';
 import TakeExam from './pages/student/TakeExam';
 import AttemptResult from './pages/student/AttemptResult';
 import ResultsHistory from './pages/student/ResultsHistory';
@@ -90,6 +91,7 @@ function App() {
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<StudentDashboard />} />
             <Route path="exams" element={<StudentExamList />} />
+            <Route path="question-bank" element={<StudentQuestionBank />} />
             <Route path="exam/:id" element={<TakeExam />} />
             <Route path="attempt/:id" element={<AttemptResult />} />
             <Route path="results" element={<ResultsHistory />} />

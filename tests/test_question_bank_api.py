@@ -37,6 +37,7 @@ def override_get_db():
         db.close()
 
 
+app.dependency_overrides[get_db] = override_get_db
 Base.metadata.create_all(bind=test_engine)
 
 
@@ -72,10 +73,6 @@ class TestQuestionBankAPI(unittest.TestCase):
         cls.prof_token = create_access_token({"sub": "1", "role": "professor"})
         cls.student_token = create_access_token({"sub": "2", "role": "student"})
 
-    @classmethod
-    def tearDownClass(cls):
-        app.dependency_overrides.pop(get_db, None)
-
     def setUp(self):
         app.dependency_overrides[get_db] = override_get_db
         with TestingSessionLocal() as session:
@@ -86,11 +83,67 @@ class TestQuestionBankAPI(unittest.TestCase):
     # Authentication & Role Authorization Tests
     # -----------------------------------------------------------------------
 
-    def test_student_forbidden_from_listing_question_bank(self):
-        """Students must receive 403 Forbidden on Question Bank endpoints."""
+    def test_student_can_list_only_approved_questions(self):
+        """Students can query approved questions for practice; pending and rejected remain hidden, and answers are redacted."""
+        with TestingSessionLocal() as session:
+            approved = QuestionBankItem(
+                question_id="QBK-APP-TEST-1",
+                question_type="mcq",
+                question_text="What is primary storage in computing?",
+                options_json=json.dumps(["RAM", "HDD", "SSD", "Tape"]),
+                correct_option="A",
+                correct_answer="RAM",
+                explanation="RAM is main/primary volatile memory.",
+                classification_status="approved",
+                review_status="approved",
+                needs_teacher_review=False,
+                embedding_status="synced",
+            )
+            pending = QuestionBankItem(
+                question_id="QBK-PEN-TEST-2",
+                question_type="essay",
+                question_text="Discuss Moore's Law implications.",
+                correct_answer="Transistors double roughly every two years.",
+                classification_status="pending_review",
+                review_status="pending_review",
+                needs_teacher_review=True,
+                embedding_status="pending",
+            )
+            rejected = QuestionBankItem(
+                question_id="QBK-REJ-TEST-3",
+                question_type="short_answer",
+                question_text="Sample flawed question.",
+                correct_answer="Flawed answer",
+                classification_status="rejected",
+                review_status="rejected",
+                needs_teacher_review=False,
+                embedding_status="failed",
+            )
+            session.add_all([approved, pending, rejected])
+            session.commit()
+
         headers = {"Authorization": f"Bearer {self.student_token}"}
         res = self.client.get("/api/question-bank", headers=headers)
-        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["total"], 1)
+        self.assertEqual(len(data["items"]), 1)
+        item = data["items"][0]
+        self.assertEqual(item["question_id"], "QBK-APP-TEST-1")
+        # Ensure answers and internal review metadata are redacted for students
+        self.assertEqual(item["correct_answer"], "")
+        self.assertIsNone(item["correct_option"])
+        self.assertIsNone(item["explanation"])
+
+    def test_student_forbidden_from_approving_or_editing_questions(self):
+        """Students are strictly forbidden from approving, rejecting, or editing questions."""
+        headers = {"Authorization": f"Bearer {self.student_token}"}
+        res_approve = self.client.post("/api/question-bank/QBK-APP-TEST-1/approve", headers=headers)
+        self.assertEqual(res_approve.status_code, 403)
+        res_reject = self.client.post("/api/question-bank/QBK-APP-TEST-1/reject", headers=headers)
+        self.assertEqual(res_reject.status_code, 403)
+        res_edit = self.client.patch("/api/question-bank/QBK-APP-TEST-1", json={"bloom_level": "Apply"}, headers=headers)
+        self.assertEqual(res_edit.status_code, 403)
 
     def test_student_forbidden_from_importing_questions(self):
         headers = {"Authorization": f"Bearer {self.student_token}"}
@@ -352,7 +405,7 @@ class TestQuestionBankAPI(unittest.TestCase):
                 correct_answer="A1",
                 difficulty="Easy",
                 bloom_level="Remember",
-                classification_status="approved",
+                classification_status="approved", review_status="approved",
             )
             q2 = QuestionBankItem(
                 question_id="Q-STAT-2",
@@ -588,10 +641,9 @@ class TestQuestionBankAPI(unittest.TestCase):
         self.assertNotEqual(body["bloom_level"], "Unknown")
         self.assertNotEqual(body["difficulty"], "Unknown")
 
-
-    # ---------------------------------------------------------------------------
-    # Cleaned Dataset Endpoint Tests (Stage 4 / Cleaned Dataset Integration)
-    # ---------------------------------------------------------------------------
+    # -----------------------------------------------------------------------
+    # Cleaned Question Bank Dataset Tests (Isolated, Read-only)
+    # -----------------------------------------------------------------------
 
     def test_cleaned_dataset_endpoint_requires_professor(self):
         """Students or unauthenticated callers cannot access cleaned dataset."""
@@ -672,3 +724,244 @@ class TestQuestionBankAPI(unittest.TestCase):
             count_after = session.query(QuestionBankItem).count()
 
         self.assertEqual(count_before, count_after, "Cleaned dataset queries must be 100% read-only with zero DB mutations")
+    # -----------------------------------------------------------------------
+    # Student Practice Grading & Classification Regression Tests
+    # -----------------------------------------------------------------------
+
+    @patch("scripts.question_analysis._send_analysis_completion")
+    @patch("scripts.curriculum_mapping._safely_get_vectorstore")
+    def test_mcq_classify_with_correct_option_derives_correct_answer(self, mock_vstore, mock_llm):
+        """MCQs can be classified with correct_option ('B') without requiring free-text correct_answer."""
+        mock_vstore.return_value = None
+        mock_llm.return_value = json.dumps({
+            "bloom_level": "Remember",
+            "difficulty": "Easy",
+            "evidence_sufficient": False,
+            "subject": "Unknown",
+            "unit": "Unknown",
+            "lesson": "Unknown",
+            "supporting_chunk_ids": [],
+            "reported_confidence": 0.90,
+            "classification_reasoning": "Standard terminology recall.",
+        })
+
+        headers = {"Authorization": f"Bearer {self.prof_token}"}
+        payload = {
+            "question_text": "Which device forwards data packets between different networks?",
+            "question_type": "mcq",
+            "options": ["Switch", "Router", "Hub", "Repeater"],
+            "correct_option": "B",
+            "persist": False,
+        }
+        res = self.client.post("/api/question-bank/classify", json=payload, headers=headers)
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["correct_option"], "B")
+        self.assertEqual(body["correct_answer"], "Router")
+        self.assertEqual(body["bloom_level"], "Remember")
+        self.assertEqual(body["difficulty"], "Easy")
+
+    @patch("scripts.question_analysis._send_analysis_completion")
+    @patch("scripts.curriculum_mapping._safely_get_vectorstore")
+    def test_mcq_classify_without_explicit_correct_option_key(self, mock_vstore, mock_llm):
+        """MCQs can be classified without requiring explicit correct_option key if answer text matches."""
+        mock_vstore.return_value = None
+        mock_llm.return_value = json.dumps({
+            "bloom_level": "Remember",
+            "difficulty": "Easy",
+            "evidence_sufficient": False,
+            "subject": "Unknown",
+            "unit": "Unknown",
+            "lesson": "Unknown",
+            "supporting_chunk_ids": [],
+            "reported_confidence": 0.90,
+            "classification_reasoning": "Standard terminology recall.",
+        })
+
+        headers = {"Authorization": f"Bearer {self.prof_token}"}
+        payload = {
+            "question_text": "Which device forwards data packets between different networks?",
+            "question_type": "mcq",
+            "options": ["Switch", "Router", "Hub", "Repeater"],
+            "correct_answer": "Router",
+            "persist": False,
+        }
+        res = self.client.post("/api/question-bank/classify", json=payload, headers=headers)
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["correct_option"], "B")
+        self.assertEqual(body["bloom_level"], "Remember")
+        self.assertEqual(body["difficulty"], "Easy")
+
+    def test_student_practice_mcq_correct_answer(self):
+        """Student submits correct MCQ option and receives score, correctness, and revealed answer."""
+        qid = "QBK-TEST-MCQ-PRACTICE-1"
+        item = QuestionBankItem(
+            question_id=qid,
+            question_type="mcq",
+            question_text="Which device forwards data packets between different networks?",
+            options_json=json.dumps(["Switch", "Router", "Hub", "Repeater"]),
+            correct_option="B",
+            correct_answer="Router",
+            explanation="A router operates at layer 3 to route packets.",
+            review_status="approved", classification_status="approved",
+            needs_teacher_review=False,
+        )
+        with TestingSessionLocal() as session:
+            session.add(item)
+            session.commit()
+
+        headers = {"Authorization": f"Bearer {self.student_token}"}
+        payload = {
+            "selected_option": "B",
+            "answer_text": "Router",
+        }
+        res = self.client.post(f"/api/question-bank/{qid}/submit", json=payload, headers=headers)
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertTrue(body["is_correct"])
+        self.assertEqual(body["score"], 1.0)
+        self.assertEqual(body["status"], "correct")
+        self.assertEqual(body["correct_option"], "B")
+        self.assertEqual(body["correct_answer"], "Router")
+        self.assertEqual(body["explanation"], "A router operates at layer 3 to route packets.")
+        self.assertIn("صحيحة", body["feedback_message"])
+
+    def test_student_practice_mcq_incorrect_answer(self):
+        """Student submits incorrect MCQ option and receives 0 score and revealed correct answer."""
+        qid = "QBK-TEST-MCQ-PRACTICE-2"
+        item = QuestionBankItem(
+            question_id=qid,
+            question_type="mcq",
+            question_text="Which device connects devices within the same local network at layer 2?",
+            options_json=json.dumps(["Switch", "Router", "Hub", "Repeater"]),
+            correct_option="A",
+            correct_answer="Switch",
+            explanation="A switch operates at Layer 2 to connect LAN devices.",
+            review_status="approved", classification_status="approved",
+            needs_teacher_review=False,
+        )
+        with TestingSessionLocal() as session:
+            session.add(item)
+            session.commit()
+
+        headers = {"Authorization": f"Bearer {self.student_token}"}
+        payload = {
+            "selected_option": "B",
+            "answer_text": "Router",
+        }
+        res = self.client.post(f"/api/question-bank/{qid}/submit", json=payload, headers=headers)
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertFalse(body["is_correct"])
+        self.assertEqual(body["score"], 0.0)
+        self.assertEqual(body["status"], "incorrect")
+        self.assertEqual(body["correct_option"], "A")
+        self.assertEqual(body["correct_answer"], "Switch")
+        self.assertIn("غير صحيحة", body["feedback_message"])
+
+    def test_student_practice_mcq_missing_answer_key_safely_handled(self):
+        """When an MCQ item has no valid answer key, system returns unverified_key safely."""
+        qid = "QBK-TEST-MCQ-PRACTICE-3"
+        item = QuestionBankItem(
+            question_id=qid,
+            question_type="mcq",
+            question_text="Hypothetical question with missing key?",
+            options_json=json.dumps(["A", "B", "C", "D"]),
+            correct_option=None,
+            correct_answer="",
+            explanation=None,
+            review_status="approved", classification_status="approved",
+            needs_teacher_review=False,
+        )
+        with TestingSessionLocal() as session:
+            session.add(item)
+            session.commit()
+
+        headers = {"Authorization": f"Bearer {self.student_token}"}
+        payload = {
+            "selected_option": "C",
+        }
+        res = self.client.post(f"/api/question-bank/{qid}/submit", json=payload, headers=headers)
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertIsNone(body["is_correct"])
+        self.assertEqual(body["status"], "unverified_key")
+        self.assertTrue(body["requires_teacher_review"])
+
+    def test_student_practice_essay_requires_teacher_review(self):
+        """Essay practice returns teacher review confirmation and model answer without falsely grading correct."""
+        qid = "QBK-TEST-ESSAY-PRACTICE-1"
+        item = QuestionBankItem(
+            question_id=qid,
+            question_type="essay",
+            question_text="Explain the concept of defense in depth in cybersecurity.",
+            options_json=None,
+            correct_option=None,
+            correct_answer="Defense in depth is the layering of security controls...",
+            explanation="Check for layered mechanisms: network, endpoint, data.",
+            review_status="approved", classification_status="approved",
+            needs_teacher_review=False,
+        )
+        with TestingSessionLocal() as session:
+            session.add(item)
+            session.commit()
+
+        headers = {"Authorization": f"Bearer {self.student_token}"}
+        payload = {
+            "answer_text": "Defense in depth means multiple security layers are used.",
+        }
+        res = self.client.post(f"/api/question-bank/{qid}/submit", json=payload, headers=headers)
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertIsNone(body["is_correct"])
+        self.assertEqual(body["score"], 0.0)
+        self.assertEqual(body["status"], "needs_teacher_review")
+        self.assertTrue(body["requires_teacher_review"])
+        self.assertEqual(body["correct_answer"], "Defense in depth is the layering of security controls...")
+        self.assertIn("مراجعة المعلم", body["feedback_message"])
+
+    def test_student_answer_redaction_before_submission(self):
+        """Student listing question bank cannot see correct answers or explanations before submission."""
+        qid = "QBK-SECRET-KEY-1"
+        item = QuestionBankItem(
+            question_id=qid,
+            question_type="mcq",
+            question_text="Classified secret question?",
+            options_json=json.dumps(["Alpha", "Beta", "Gamma", "Delta"]),
+            correct_option="C",
+            correct_answer="Gamma",
+            explanation="Gamma is the high-energy photon.",
+            review_status="approved", classification_status="approved",
+            needs_teacher_review=False,
+        )
+        with TestingSessionLocal() as session:
+            session.add(item)
+            session.commit()
+
+        headers = {"Authorization": f"Bearer {self.student_token}"}
+        res = self.client.get("/api/question-bank", headers=headers)
+        self.assertEqual(res.status_code, 200)
+        items = res.json()["items"]
+        secret_items = [it for it in items if it["question_id"] == qid]
+        self.assertTrue(len(secret_items) > 0)
+        secret_item = secret_items[0]
+        self.assertEqual(secret_item["correct_answer"], "")
+        self.assertIsNone(secret_item["correct_option"])
+        self.assertIsNone(secret_item["explanation"])
+
+    @patch("httpx.Client.post")
+    def test_groq_completion_provider_unbound_local_regression(self, mock_post):
+        """Regression test: verify Groq provider handles connection errors without UnboundLocalError 'status'."""
+        from scripts.generation import _send_groq_completion, LLMProviderError
+        import httpx
+
+        # Simulate network error on all attempts
+        mock_post.side_effect = httpx.ConnectError("Connection refused")
+
+        with self.assertRaises(LLMProviderError) as ctx:
+            _send_groq_completion("test prompt", max_attempts=2)
+
+        self.assertIn("network or connection error", str(ctx.exception).lower())
+        self.assertNotIn("status", str(ctx.exception).lower())
+

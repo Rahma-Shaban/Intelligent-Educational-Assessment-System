@@ -21,6 +21,7 @@ python-jose[cryptography]
 bcrypt
 python-multipart
 httpx
+truststore
 
 # Machine learning (analytics)
 scikit-learn

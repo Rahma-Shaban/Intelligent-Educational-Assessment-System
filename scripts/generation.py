@@ -799,6 +799,27 @@ def _send_ollama_completion(
     )
 
 
+def _build_ssl_context() -> Any:
+    """
+    Builds an SSLContext that validates against both certifi CA certificates
+    and the host operating system's root certificate store (e.g. Windows ROOT,
+    antivirus HTTPS inspection like Avast/Kaspersky, or enterprise proxies)
+    without compromising TLS certificate verification.
+    """
+    import ssl
+    try:
+        import truststore
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except Exception:
+        try:
+            import certifi
+            ctx = ssl.create_default_context(cafile=certifi.where())
+            ctx.load_default_certs(ssl.Purpose.SERVER_AUTH)
+            return ctx
+        except Exception:
+            return True
+
+
 def _send_groq_completion(
     prompt: str,
     *,
@@ -819,9 +840,11 @@ def _send_groq_completion(
         "Content-Type": "application/json",
     }
 
-    with httpx.Client(timeout=60.0) as client:
+    ssl_context = _build_ssl_context()
+    with httpx.Client(timeout=60.0, verify=ssl_context) as client:
         rate_limit_attempt = 0
         for attempt in range(max_attempts):
+            response = None
             output_budget = max_tokens if attempt == 0 else RETRY_COMPLETION_TOKENS
             payload = {
                 "model": model,
@@ -870,6 +893,9 @@ def _send_groq_completion(
                         f"Groq quota or rate limit exceeded, retry in {wait_sec:.1f} seconds. Details: {err_msg}"
                     )
                 break
+
+            if response is None:
+                continue
 
             if status in {401, 403}:
                 raise LLMProviderError(

@@ -9,6 +9,13 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Enable native OS certificate validation (e.g., Windows Root Store, enterprise proxies, antivirus SSL inspection)
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:
+    pass
+
 # Base project directory
 BASE_DIR = Path(__file__).resolve().parent.parent
 
