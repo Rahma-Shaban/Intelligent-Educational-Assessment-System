@@ -195,6 +195,44 @@ class RubricItemUpdate(BaseModel):
     points: float = Field(..., gt=0)
 
 
+class ExamAttemptResultItem(BaseModel):
+    """One submitted attempt in a professor exam-results view."""
+
+    attempt_id: int
+    score: float | None = None
+    max_possible_score: float | None = None
+    score_percentage: float | None = None
+    submitted_at: datetime | None = None
+    duration_seconds: int | None = None
+    is_suspicious: bool | None = None
+    suspicion_status: str | None = None
+    suspicion_reason: str | None = None
+    anomaly_score: float | None = None
+    anomaly_assessed: bool = False
+
+
+class ExamStudentResultItem(BaseModel):
+    """Per-student submitted-attempt summary for a professor-owned exam."""
+
+    student_id: int
+    student_name: str
+    submitted_attempt_count: int
+    unsubmitted_attempt_count: int = 0
+    attempts: list[ExamAttemptResultItem] = Field(default_factory=list)
+
+
+class ExamStudentResultsResponse(BaseModel):
+    """Professor-facing student results for a single exam."""
+
+    exam_id: int
+    exam_title: str
+    distinct_submitted_students_count: int = Field(
+        default=0,
+        description="Total distinct students who submitted at least one attempt",
+    )
+    students: list[ExamStudentResultItem] = Field(default_factory=list)
+
+
 class QuestionUpdateRequest(BaseModel):
     """Professor-provided edits for one generated exam question."""
 
@@ -263,6 +301,11 @@ class AttemptResponse(BaseModel):
     exam_title: str | None = None
     is_practice: bool = False
     lesson_id: str | None = None
+    # Instructor-only screening fields; omitted/null in student-facing payloads
+    is_suspicious: bool | None = None
+    suspicion_status: str | None = None
+    suspicion_reason: str | None = None
+    anomaly_score: float | None = None
 
 
 # ==============================================================================

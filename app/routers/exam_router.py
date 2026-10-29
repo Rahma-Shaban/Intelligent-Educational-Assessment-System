@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
+from app.anomaly import compute_score_percentage
 from app.auth import get_current_user, require_role
 from app.database import get_db
 from app.improvement_service import (
@@ -18,12 +20,15 @@ from app.improvement_service import (
     real_exam_filter,
     resolve_practice_source,
 )
-from app.models import Curriculum, Exam, User
+from app.models import Curriculum, Exam, ExamAttempt, User
 from app.schemas import (
+    ExamAttemptResultItem,
     ExamGenerateRequest,
     ExamListItem,
     ExamPublishRequest,
     ExamResponse,
+    ExamStudentResultItem,
+    ExamStudentResultsResponse,
     PracticeExamRequest,
     QuestionUpdateRequest,
 )
@@ -424,6 +429,89 @@ def get_exam_by_id(
     )
 
     return _build_exam_response(exam, questions, warnings)
+
+
+@router.get(
+    "/{exam_id}/results",
+    response_model=ExamStudentResultsResponse,
+    summary="Student results and screening indicators for an exam (Professor only)",
+)
+def get_exam_student_results(
+    exam_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("professor")),
+) -> ExamStudentResultsResponse:
+    """
+    Returns submitted attempts grouped by student for an exam the professor owns.
+    Screening fields are review indicators, not findings of misconduct.
+    """
+    exam = db.scalar(select(Exam).where(Exam.id == exam_id))
+    if not exam:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Exam with ID {exam_id} not found.",
+        )
+    _ensure_professor_owns(exam, current_user)
+
+    attempts = db.scalars(
+        select(ExamAttempt)
+        .options(joinedload(ExamAttempt.student))
+        .where(ExamAttempt.exam_id == exam_id)
+        .order_by(ExamAttempt.started_at.asc())
+    ).unique().all()
+
+    grouped: dict[int, list[ExamAttempt]] = defaultdict(list)
+    for attempt in attempts:
+        grouped[attempt.student_id].append(attempt)
+
+    students: list[ExamStudentResultItem] = []
+    for student_id, student_attempts in grouped.items():
+        submitted = [att for att in student_attempts if att.submitted_at is not None]
+        if not submitted:
+            continue
+        unsubmitted_count = len(student_attempts) - len(submitted)
+        student = submitted[0].student
+        attempt_items: list[ExamAttemptResultItem] = []
+        for att in submitted:
+            score_pct = compute_score_percentage(att.total_score, att.max_possible_score)
+            anomaly_score = getattr(att, "anomaly_score", None)
+            sub_at = (
+                att.submitted_at.replace(tzinfo=timezone.utc)
+                if att.submitted_at is not None and att.submitted_at.tzinfo is None
+                else att.submitted_at
+            )
+            attempt_items.append(
+                ExamAttemptResultItem(
+                    attempt_id=att.id,
+                    score=att.total_score,
+                    max_possible_score=att.max_possible_score,
+                    score_percentage=score_pct,
+                    submitted_at=sub_at,
+                    duration_seconds=att.duration_seconds,
+                    is_suspicious=bool(getattr(att, "is_suspicious", False)),
+                    suspicion_status=getattr(att, "suspicion_status", None),
+                    suspicion_reason=getattr(att, "suspicion_reason", None),
+                    anomaly_score=anomaly_score,
+                    anomaly_assessed=anomaly_score is not None,
+                )
+            )
+        students.append(
+            ExamStudentResultItem(
+                student_id=student_id,
+                student_name=student.name if student else f"Student #{student_id}",
+                submitted_attempt_count=len(submitted),
+                unsubmitted_attempt_count=unsubmitted_count,
+                attempts=attempt_items,
+            )
+        )
+
+    students.sort(key=lambda item: (item.student_name.lower(), item.student_id))
+    return ExamStudentResultsResponse(
+        exam_id=exam.id,
+        exam_title=exam.title,
+        distinct_submitted_students_count=len(students),
+        students=students,
+    )
 
 
 @router.post(

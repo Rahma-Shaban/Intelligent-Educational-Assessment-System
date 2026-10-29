@@ -24,10 +24,12 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+ROOT_DIR = Path(__file__).resolve().parent.parent
+
 # Canonical locations where cleaned datasets reside
 CANONICAL_DATASET_PATHS = [
-    Path("data/processed/Question_Bank_Cleaned.xlsx"),
-    Path("data/raw/Question_Bank_Cleaned.xlsx"),
+    ROOT_DIR / "data" / "processed" / "Question_Bank_Cleaned.xlsx",
+    ROOT_DIR / "data" / "raw" / "Question_Bank_Cleaned.xlsx",
 ]
 
 # Required schema columns expected from the question cleaning process

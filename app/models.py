@@ -160,6 +160,11 @@ class ExamAttempt(Base):
     total_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_possible_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     graded_answers_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Statistical screening indicators for instructor review (not a misconduct finding)
+    is_suspicious: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    suspicion_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    suspicion_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    anomaly_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Relationships
     exam: Mapped["Exam"] = relationship("Exam", back_populates="attempts")
