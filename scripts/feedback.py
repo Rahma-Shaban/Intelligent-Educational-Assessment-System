@@ -259,16 +259,29 @@ Return strictly a valid JSON object matching this schema:
     retry_correction: str | None = None
     parsed: dict[str, Any] | None = None
 
-    for attempt_idx in range(MAX_COMPLETION_ATTEMPTS):
-        active_prompt = prompt if not retry_correction else f"{prompt}\n\nCorrection required: {retry_correction}"
-        raw_output = _send_feedback_completion(active_prompt)
-        try:
-            parsed = _extract_json_object(raw_output)
-            break
-        except (json.JSONDecodeError, ValueError) as exc:
-            if attempt_idx + 1 == MAX_COMPLETION_ATTEMPTS:
-                raise ValueError(f"Gemini returned invalid JSON for class summary: {exc}") from exc
-            retry_correction = "Return strictly a valid JSON object with overall_assessment, key_findings, topic_recommendations, intervention_needed, and class_strengths."
+    try:
+        for attempt_idx in range(MAX_COMPLETION_ATTEMPTS):
+            active_prompt = prompt if not retry_correction else f"{prompt}\n\nCorrection required: {retry_correction}"
+            raw_output = _send_feedback_completion(active_prompt)
+            try:
+                parsed = _extract_json_object(raw_output)
+                break
+            except (json.JSONDecodeError, ValueError) as exc:
+                if attempt_idx + 1 == MAX_COMPLETION_ATTEMPTS:
+                    raise ValueError(f"LLM returned invalid JSON for class summary: {exc}") from exc
+                retry_correction = "Return strictly a valid JSON object with overall_assessment, key_findings, topic_recommendations, intervention_needed, and class_strengths."
+    except Exception as exc:
+        logger.warning("LLM class summary generation failed; using fallback summary: %s", exc)
+        return {
+            "overall_assessment": f"The class shows an average performance of {avg_score_pct}% across {total_attempts} attempts.",
+            "key_findings": [
+                f"Class mean percentage score is {avg_score_pct}%.",
+                f"Total completed submissions: {total_attempts}.",
+            ],
+            "topic_recommendations": {t: "Review key concepts and reinforce through targeted practice." for t in list(topic_performance.keys())[:3]},
+            "intervention_needed": sorted(list(intervention_students_set)),
+            "class_strengths": ["Engagement in course assessments and exercises."],
+        }
 
     if not isinstance(parsed, dict):
         raise ValueError("Model response could not be parsed into a dictionary")
